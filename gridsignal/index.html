@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GridSignal</title>
+  <meta name="description" content="Netztrafo-Auslastung und dynamische Preissignale für Verteilnetzbetreiber">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- App Bootstrap -->
+  <script type="module">
+    import { BRAND, applyBrand, loadFonts } from "./config/brand.js";
+    import { store, getDemoStammdaten } from "./js/store.js";
+    import { initApi, getApi } from "./js/api.js";
+    import { router, getIconSvg } from "./js/router.js";
+    import { chartManager } from "./js/charts.js";
+    import { showToast } from "./js/toast.js";
+
+    import stammdatenView  from "./js/views/stammdaten.js";
+    import lastgangView    from "./js/views/lastgang.js";
+    import auslastungView  from "./js/views/auslastung.js";
+    import prognoseView    from "./js/views/prognose.js";
+    import preissignalView from "./js/views/preissignal.js";
+
+    // ── 1. Brand & Fonts anwenden ──────────────────────────────────────────
+    const darkMode = store.get("darkMode", false);
+    applyBrand(BRAND, darkMode);
+    loadFonts(BRAND);
+    document.title = BRAND.productName;
+
+    // ── 2. API initialisieren ──────────────────────────────────────────────
+    const api = initApi(BRAND);
+
+    // ── 3. App-Shell aufbauen ──────────────────────────────────────────────
+    function buildShell() {
+      const views = [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView];
+
+      // Logo
+      const logoArea = document.getElementById("logo-area");
+      if (logoArea) {
+        if (BRAND.logoUrl) {
+          logoArea.innerHTML = `
+            <img src="${BRAND.logoUrl}" alt="${BRAND.productName}" style="height:32px">
+            <div class="logo-text">
+              <div class="logo-name">${BRAND.productName}</div>
+              <div class="logo-tagline">${BRAND.productTagline}</div>
+            </div>`;
+        } else {
+          logoArea.innerHTML = `
+            <div class="logo-icon">
+              <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <div class="logo-text">
+              <div class="logo-name">${BRAND.productName}</div>
+              <div class="logo-tagline">${BRAND.productTagline}</div>
+            </div>`;
+        }
+      }
+
+      // Nav-Items aufbauen
+      const navList = document.getElementById("nav-list");
+      if (navList) {
+        navList.innerHTML = views.map(v => `
+          <li class="nav-item">
+            <a class="nav-link" data-view="${v.id}" data-label="${BRAND.i18n.nav[v.id] || v.label}" href="#${v.id}">
+              <span class="nav-icon">${getIconSvg(v.icon)}</span>
+              <span class="nav-label">${BRAND.i18n.nav[v.id] || v.label}</span>
+            </a>
+          </li>`).join("");
+      }
+
+      // Version + Powered-by
+      const versionEl = document.getElementById("sidebar-version");
+      if (versionEl) versionEl.textContent = `v${BRAND.productVersion}`;
+
+      const poweredBy = document.getElementById("powered-by");
+      if (poweredBy) poweredBy.style.display = BRAND.poweredBy ? "" : "none";
+
+      // Dark-Mode-Toggle sichtbar?
+      const dmToggle = document.getElementById("dark-mode-toggle");
+      if (dmToggle) {
+        dmToggle.style.display = BRAND.features.darkMode ? "" : "none";
+        dmToggle.innerHTML = darkMode
+          ? getIconSvg("sun")
+          : getIconSvg("moon");
+        dmToggle.title = darkMode ? "Hell-Modus" : "Dunkel-Modus";
+      }
+
+      // Backend-Sync-Button
+      const syncBtn = document.getElementById("sync-btn");
+      if (syncBtn) syncBtn.style.display = BRAND.features.backendSync ? "" : "none";
+    }
+
+    // ── 4. Interaktivität ──────────────────────────────────────────────────
+    function bindEvents() {
+      // Sidebar Toggle
+      document.getElementById("sidebar-toggle")?.addEventListener("click", () => {
+        const shell = document.getElementById("app-shell");
+        const collapsed = shell.classList.toggle("sidebar-collapsed");
+        store.set("sidebarCollapsed", collapsed);
+      });
+
+      // Sidebar-Zustand wiederherstellen
+      if (store.get("sidebarCollapsed")) {
+        document.getElementById("app-shell")?.classList.add("sidebar-collapsed");
+      }
+
+      // Dark Mode Toggle
+      document.getElementById("dark-mode-toggle")?.addEventListener("click", () => {
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const newDark = !isDark;
+        store.set("darkMode", newDark);
+        applyBrand(BRAND, newDark);
+        chartManager.setDarkMode(newDark);
+
+        const btn = document.getElementById("dark-mode-toggle");
+        if (btn) {
+          btn.innerHTML = newDark ? getIconSvg("sun") : getIconSvg("moon");
+          btn.title = newDark ? "Hell-Modus" : "Dunkel-Modus";
+        }
+      });
+
+      // Trafo-Selector
+      document.getElementById("trafo-selector")?.addEventListener("change", e => {
+        const id = e.target.value;
+        store.set("activeTrafoId", id);
+        router.navigate(router.getCurrent() || "stammdaten");
+      });
+
+      // Sync-Button
+      document.getElementById("sync-btn")?.addEventListener("click", async () => {
+        const btn = document.getElementById("sync-btn");
+        btn?.classList.add("btn-loading");
+        try {
+          const result = await api.ping();
+          if (result.status === "ok") {
+            showToast("success", "Backend verbunden", `Version: ${result.version || "–"}`);
+            updateBackendStatus(true);
+          } else {
+            showToast("warning", "Backend nicht erreichbar", "Offline-Modus aktiv.");
+          }
+        } catch {
+          showToast("error", "Verbindungsfehler", "Backend nicht erreichbar.");
+        } finally {
+          btn?.classList.remove("btn-loading");
+        }
+      });
+
+      // Hash-basiertes Routing
+      window.addEventListener("hashchange", () => {
+        const id = location.hash.substring(1) || "stammdaten";
+        router.navigate(id);
+      });
+    }
+
+    // ── 5. Backend-Status prüfen ───────────────────────────────────────────
+    async function checkBackendStatus() {
+      try {
+        const result = await api.ping();
+        updateBackendStatus(result.status === "ok");
+      } catch {
+        updateBackendStatus(false);
+      }
+    }
+
+    function updateBackendStatus(online) {
+      const dot   = document.getElementById("status-dot");
+      const label = document.getElementById("status-label");
+      if (dot) dot.className = "status-dot" + (online ? " online" : "");
+      if (label) label.textContent = online
+        ? BRAND.i18n.status.online
+        : BRAND.i18n.status.offline;
+    }
+
+    // ── 6. Stammdaten & Trafo-Selector ────────────────────────────────────
+    async function initTrafoSelector() {
+      try {
+        const trafos = await api.getStammdaten();
+        const sel = document.getElementById("trafo-selector");
+        if (!sel) return;
+
+        if (trafos.length) {
+          sel.innerHTML = trafos.map(t =>
+            `<option value="${t.id}">${t.name || t.id}</option>`
+          ).join("");
+          // Aktiven Trafo wiederherstellen
+          const active = store.get("activeTrafoId");
+          if (active && trafos.find(t => t.id === active)) {
+            sel.value = active;
+          } else {
+            store.set("activeTrafoId", trafos[0].id);
+          }
+        } else if (BRAND.features.demoData) {
+          // Demo-Stammdaten einmalig initialisieren
+          const demo = getDemoStammdaten();
+          await Promise.all(demo.map(d => api.saveStammdaten(d)));
+          sel.innerHTML = demo.map(d =>
+            `<option value="${d.id}">${d.name}</option>`
+          ).join("");
+          store.set("activeTrafoId", demo[0].id);
+        }
+      } catch (e) {
+        console.error("[app] Trafo-Selector init:", e);
+      }
+    }
+
+    // ── 7. Router & Views ─────────────────────────────────────────────────
+    function initRouter() {
+      const container = document.getElementById("view-container");
+      router.init(container);
+
+      [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView]
+        .forEach(v => router.register(v.id, v));
+
+      // Dark mode bei Chart-Initialisierung
+      chartManager.setDarkMode(darkMode);
+
+      // Route aus Hash oder Default
+      const startView = location.hash.substring(1) || "stammdaten";
+      router.navigate(startView);
+    }
+
+    // ── App starten ────────────────────────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", async () => {
+      buildShell();
+      bindEvents();
+      await checkBackendStatus();
+      await initTrafoSelector();
+      initRouter();
+    });
+  </script>
+</head>
+<body>
+
+<div class="app-shell" id="app-shell">
+
+  <!-- ═══ SIDEBAR ═══════════════════════════════════════════════════════════ -->
+  <nav class="sidebar" id="sidebar">
+
+    <div class="sidebar-header">
+      <div class="logo-area" id="logo-area">
+        <!-- wird per JS befüllt -->
+      </div>
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Sidebar einklappen">
+        <svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Navigation</div>
+      <ul class="nav-list" id="nav-list">
+        <!-- wird per JS befüllt -->
+      </ul>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="backend-status">
+        <div class="status-dot" id="status-dot"></div>
+        <span class="status-label" id="status-label">Prüfe…</span>
+      </div>
+      <div class="sidebar-version" id="sidebar-version"></div>
+      <div class="powered-by" id="powered-by">
+        Powered by <a href="#" tabindex="-1">GridSignal</a>
+      </div>
+    </div>
+
+  </nav>
+
+  <!-- ═══ MAIN CONTENT ══════════════════════════════════════════════════════ -->
+  <div class="main-content">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="breadcrumb">
+          <span class="breadcrumb-item">GridSignal</span>
+          <span class="breadcrumb-sep">/</span>
+          <span class="breadcrumb-item current" id="breadcrumb-current">Stammdaten</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- Trafostation Auswahl -->
+        <div class="trafo-selector-wrap">
+          <label for="trafo-selector" style="font-size:var(--text-xs);color:var(--color-text-secondary)">Trafo:</label>
+          <select class="trafo-selector" id="trafo-selector">
+            <option value="">Lade…</option>
+          </select>
+        </div>
+
+        <!-- Sync Button (nur wenn backendSync: true) -->
+        <button class="header-btn" id="sync-btn" title="Backend synchronisieren" style="display:none">
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+
+        <!-- Dark Mode Toggle -->
+        <button class="header-btn" id="dark-mode-toggle" title="Dark Mode">
+          <svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- View Container -->
+    <div class="view-container" id="view-container">
+      <!-- Views werden hier per Router eingefügt -->
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast Container (wird per JS erstellt) -->
+
+</body>
+</html>
