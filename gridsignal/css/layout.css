@@ -565,233 +565,185 @@
 }
 
 /* ============================================================
-   MOBILE OVERLAY BACKDROP
+   SIDEBAR-BACKDROP (Mobile Overlay)
    ============================================================ */
 .sidebar-backdrop {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: calc(var(--z-sticky) - 1);
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 399;
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-
-.sidebar-backdrop.visible {
-  display: block;
-}
+.sidebar-backdrop.visible { display: block; }
 
 /* ============================================================
-   MOBILE HEADER BAR (nur auf kleinen Screens)
+   TABLET (≤ 1024px) — Sidebar automatisch icon-only
    ============================================================ */
-.mobile-header {
-  display: none;
-}
-
-/* ============================================================
-   RESPONSIVE BREAKPOINTS
-   ============================================================ */
-
-/* ---- Tablet (≤ 1024px): Sidebar auto-collapsed ---- */
 @media (max-width: 1024px) {
-  .app-shell {
-    grid-template-columns: var(--sidebar-width-collapsed) 1fr;
-  }
-
+  .app-shell,
   .app-shell.sidebar-collapsed {
     grid-template-columns: var(--sidebar-width-collapsed) 1fr;
   }
 
-  /* Sidebar-Toggle verstecken (automatisch collapsed) */
-  .sidebar-toggle {
-    display: none;
-  }
+  .sidebar-toggle { display: none; }
 
-  .logo-text,
-  .nav-label,
-  .nav-section-label,
-  .status-label,
-  .sidebar-version,
-  .powered-by {
+  .logo-text, .nav-label, .nav-section-label,
+  .status-label, .sidebar-version, .powered-by {
     opacity: 0;
     width: 0;
     overflow: hidden;
     pointer-events: none;
   }
 
-  /* Trafo-Label ausblenden */
-  .trafo-selector-wrap label {
-    display: none;
-  }
+  .trafo-selector-wrap label { display: none; }
 }
 
-/* ---- Mobile (≤ 767px): Sidebar als Slide-in Overlay ---- */
+/* ============================================================
+   MOBILE (≤ 767px) — Sidebar als Slide-in-Overlay
+   Die primäre Absicherung ist bereits als Inline-CSS in
+   index.html, damit sie VOR dem externen CSS greift.
+   ============================================================ */
 @media (max-width: 767px) {
-  /* App-Shell: einspaltig, Sidebar raus aus dem Grid-Flow */
-  .app-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
 
+  /* App-Shell: Flexbox statt Grid, Sidebar raus aus dem Flow */
+  .app-shell,
   .app-shell.sidebar-collapsed {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    height: 100svh; /* safe viewport height für iOS */
+    overflow: hidden;
+    grid-template-columns: unset;
   }
 
-  /* Sidebar: festes Overlay, standardmäßig versteckt */
+  /* Sidebar: festes Overlay, standardmäßig links versteckt */
   .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100dvh;
-    width: var(--sidebar-width) !important;
-    transform: translateX(-100%);
-    transition: transform var(--transition-layout);
-    z-index: var(--z-modal);
-    box-shadow: var(--shadow-xl);
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 240px !important;
+    height: 100% !important;
+    transform: translateX(-100%) !important;
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+    z-index: 400 !important;
   }
 
-  /* Sidebar sichtbar wenn geöffnet */
+  /* Sidebar eingeblendet */
   .sidebar.mobile-open {
-    transform: translateX(0);
+    transform: translateX(0) !important;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.4) !important;
   }
 
-  /* Logo-Texte und Labels im Mobile-Sidebar immer sichtbar */
+  /* Alle Labels in der offenen Sidebar sichtbar */
   .sidebar.mobile-open .logo-text,
   .sidebar.mobile-open .nav-label,
   .sidebar.mobile-open .nav-section-label,
   .sidebar.mobile-open .status-label,
   .sidebar.mobile-open .sidebar-version,
   .sidebar.mobile-open .powered-by {
-    opacity: 1;
-    width: auto;
-    overflow: visible;
-    pointer-events: auto;
+    opacity: 1 !important;
+    width: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
   }
 
-  .sidebar.mobile-open .sidebar-toggle {
-    display: flex;
-  }
+  .sidebar.mobile-open .sidebar-toggle { display: flex; }
 
-  /* Main Content: volle Breite */
+  /* Main Content: nimmt gesamten Platz ein */
   .main-content {
+    flex: 1;
     width: 100%;
     min-width: 0;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  /* Desktop-Header: Hamburger einblenden */
+  /* Header */
   .app-header {
-    padding: 0 var(--space-4);
-    height: 56px;
+    padding: 0 var(--space-3);
+    height: 54px;
+    flex-shrink: 0;
   }
 
-  .mobile-menu-btn {
-    display: flex !important;
-  }
+  /* Breadcrumb-Prefix ausblenden */
+  .breadcrumb-item:not(.current),
+  .breadcrumb-sep { display: none; }
 
-  /* Breadcrumb-Text kürzen */
-  .breadcrumb-item:not(.current) {
-    display: none;
-  }
+  /* Trafo-Selector */
+  .trafo-selector-wrap label { display: none; }
+  .trafo-selector { max-width: 120px; font-size: var(--text-xs); }
 
-  .breadcrumb-sep {
-    display: none;
-  }
-
-  /* Trafo-Selector Wrap */
-  .trafo-selector-wrap label {
-    display: none;
-  }
-
-  .trafo-selector {
-    max-width: 130px;
-    font-size: var(--text-xs);
-  }
-
-  /* View Container: weniger Padding */
+  /* View-Container: scrollbarer Bereich */
   .view-container {
-    padding: var(--space-4);
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--space-3);
+    -webkit-overflow-scrolling: touch;
   }
 
-  /* KPI Grid: 2 Spalten auf Mobile */
+  /* View-Header */
+  .view-title  { font-size: var(--text-xl); }
+
+  /* KPI: 2 Spalten */
   .kpi-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
+  .kpi-value { font-size: var(--text-xl) !important; }
+  .kpi-label { font-size: 10px; }
 
-  /* KPI-Werte kleiner */
-  .kpi-value {
-    font-size: var(--text-xl) !important;
-  }
+  /* Charts: einspaltig */
+  .chart-grid,
+  .chart-grid.single { grid-template-columns: 1fr !important; }
 
-  /* Chart-Grid: immer einspaltig */
-  .chart-grid {
-    grid-template-columns: 1fr !important;
-  }
+  /* Chart-Höhen reduzieren */
+  .chart-wrapper { max-height: 220px; }
 
-  /* Form-Grid: einspaltig */
+  /* Forms: einspaltig */
   .form-grid,
-  .form-grid-3 {
-    grid-template-columns: 1fr !important;
-  }
+  .form-grid-3 { grid-template-columns: 1fr !important; }
 
-  /* Param-Panel Zonen-Grid */
-  #ps-content [style*="grid-template-columns:1fr 1fr 1fr"] {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
+  /* Zonen-Parameterleiste: gestapelt */
+  .zone-grid-3 { grid-template-columns: 1fr !important; }
 
-  /* Buttons in Preissignal wrap */
-  .param-panel > div:last-child {
-    flex-wrap: wrap;
-  }
+  /* Buttons umbrechen */
+  .btn-group-wrap,
+  .param-panel [style*="display:flex"][style*="gap"] { flex-wrap: wrap; }
 
-  /* Toast: volle Breite */
-  .toast-container {
-    left: var(--space-3);
-    right: var(--space-3);
-  }
-
-  .toast {
-    min-width: unset;
-    max-width: unset;
-    width: 100%;
-  }
-
-  /* Card padding kleiner */
-  .card-body {
-    padding: var(--space-4);
-  }
-
+  /* Karten */
+  .card-body  { padding: var(--space-3) var(--space-4); }
   .card-header {
     padding: var(--space-3) var(--space-4);
     flex-wrap: wrap;
     gap: var(--space-2);
   }
+  .card-footer { padding: var(--space-3) var(--space-4); flex-wrap: wrap; }
 
-  /* Sub-tabs scrollbar */
-  .sub-tabs {
-    overflow-x: auto;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
-  }
+  /* Toasts: volle Breite */
+  .toast-container { left: var(--space-3); right: var(--space-3); top: var(--space-3); }
+  .toast { min-width: unset; max-width: unset; width: 100%; }
 
-  /* Chart-Höhe anpassen */
-  .chart-wrapper[style*="height:260px"] { height: 200px !important; }
-  .chart-wrapper[style*="height:300px"] { height: 220px !important; }
-  .chart-wrapper[style*="height:220px"] { height: 180px !important; }
-  .chart-wrapper[style*="height:200px"] { height: 160px !important; }
-
-  /* Stammdaten berechnete Kacheln: 2er Grid */
-  #stammdaten-kpi { grid-template-columns: repeat(2, 1fr) !important; }
-
-  /* Tabellen horizontal scrollbar */
+  /* Tabellen: horizontal scrollbar */
   .table-wrapper {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Preissignal Zonen-Grid auf Mobile */
-  .zone-grid-3 {
-    grid-template-columns: 1fr !important;
+  /* Sub-Tabs scrollbar */
+  .sub-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 1px;
   }
+
+  /* Drop-Zone kleiner */
+  .drop-zone { padding: var(--space-8) var(--space-4); }
+
+  /* Stammdaten KPI */
+  #stammdaten-kpi { grid-template-columns: repeat(2, 1fr) !important; }
 }

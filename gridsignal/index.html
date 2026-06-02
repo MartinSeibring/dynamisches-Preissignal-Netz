@@ -11,6 +11,23 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
 
+  <!-- Sofort-Fix: Sidebar auf Mobile versteckt BEVOR externes CSS geladen ist -->
+  <style>
+    @media (max-width: 767px) {
+      #app-shell { display: flex; flex-direction: column; height: 100svh; overflow: hidden; }
+      #sidebar   { position: fixed; top: 0; left: 0; width: 240px !important; height: 100%;
+                   transform: translateX(-100%); z-index: 400;
+                   transition: transform 200ms cubic-bezier(.4,0,.2,1); }
+      #sidebar.mobile-open { transform: translateX(0); box-shadow: 0 0 40px rgba(0,0,0,.35); }
+      .main-content { flex: 1; min-width: 0; width: 100%; overflow: hidden;
+                      display: flex; flex-direction: column; }
+      #mobile-menu-btn { display: flex !important; }
+    }
+    @media (min-width: 768px) {
+      #mobile-menu-btn { display: none !important; }
+    }
+  </style>
+
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
@@ -261,12 +278,24 @@
 
     // ── App starten ────────────────────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", async () => {
-      buildShell();
-      bindEvents();
-      initMobileSidebar();
+      try {
+        buildShell();
+      } catch (e) {
+        console.error("[GridSignal] buildShell Fehler:", e);
+      }
+      try {
+        bindEvents();
+        initMobileSidebar();
+      } catch (e) {
+        console.error("[GridSignal] bindEvents Fehler:", e);
+      }
       await checkBackendStatus();
       await initTrafoSelector();
-      initRouter();
+      try {
+        initRouter();
+      } catch (e) {
+        console.error("[GridSignal] Router Fehler:", e);
+      }
     });
   </script>
 </head>
