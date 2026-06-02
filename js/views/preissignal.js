@@ -302,7 +302,7 @@ function buildHTML() {
 
   <div style="margin-bottom:var(--space-4)">
     <div class="section-title" style="font-size:var(--text-sm);margin-bottom:var(--space-3)">Auslastungs-Schwellen und Preis-Multiplikatoren</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-4)">
+    <div class="zone-grid-3" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-4)">
       <div style="border-left:3px solid var(--color-zone-yellow);padding-left:var(--space-3)">
         <div class="form-label" style="color:var(--color-zone-yellow)">Zone Gelb</div>
         <div class="form-grid" style="margin-top:var(--space-2)">
