@@ -563,3 +563,235 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+   MOBILE OVERLAY BACKDROP
+   ============================================================ */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: calc(var(--z-sticky) - 1);
+  backdrop-filter: blur(2px);
+}
+
+.sidebar-backdrop.visible {
+  display: block;
+}
+
+/* ============================================================
+   MOBILE HEADER BAR (nur auf kleinen Screens)
+   ============================================================ */
+.mobile-header {
+  display: none;
+}
+
+/* ============================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================ */
+
+/* ---- Tablet (≤ 1024px): Sidebar auto-collapsed ---- */
+@media (max-width: 1024px) {
+  .app-shell {
+    grid-template-columns: var(--sidebar-width-collapsed) 1fr;
+  }
+
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: var(--sidebar-width-collapsed) 1fr;
+  }
+
+  /* Sidebar-Toggle verstecken (automatisch collapsed) */
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .logo-text,
+  .nav-label,
+  .nav-section-label,
+  .status-label,
+  .sidebar-version,
+  .powered-by {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* Trafo-Label ausblenden */
+  .trafo-selector-wrap label {
+    display: none;
+  }
+}
+
+/* ---- Mobile (≤ 767px): Sidebar als Slide-in Overlay ---- */
+@media (max-width: 767px) {
+  /* App-Shell: einspaltig, Sidebar raus aus dem Grid-Flow */
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  /* Sidebar: festes Overlay, standardmäßig versteckt */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100dvh;
+    width: var(--sidebar-width) !important;
+    transform: translateX(-100%);
+    transition: transform var(--transition-layout);
+    z-index: var(--z-modal);
+    box-shadow: var(--shadow-xl);
+  }
+
+  /* Sidebar sichtbar wenn geöffnet */
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Logo-Texte und Labels im Mobile-Sidebar immer sichtbar */
+  .sidebar.mobile-open .logo-text,
+  .sidebar.mobile-open .nav-label,
+  .sidebar.mobile-open .nav-section-label,
+  .sidebar.mobile-open .status-label,
+  .sidebar.mobile-open .sidebar-version,
+  .sidebar.mobile-open .powered-by {
+    opacity: 1;
+    width: auto;
+    overflow: visible;
+    pointer-events: auto;
+  }
+
+  .sidebar.mobile-open .sidebar-toggle {
+    display: flex;
+  }
+
+  /* Main Content: volle Breite */
+  .main-content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Desktop-Header: Hamburger einblenden */
+  .app-header {
+    padding: 0 var(--space-4);
+    height: 56px;
+  }
+
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+
+  /* Breadcrumb-Text kürzen */
+  .breadcrumb-item:not(.current) {
+    display: none;
+  }
+
+  .breadcrumb-sep {
+    display: none;
+  }
+
+  /* Trafo-Selector Wrap */
+  .trafo-selector-wrap label {
+    display: none;
+  }
+
+  .trafo-selector {
+    max-width: 130px;
+    font-size: var(--text-xs);
+  }
+
+  /* View Container: weniger Padding */
+  .view-container {
+    padding: var(--space-4);
+  }
+
+  /* KPI Grid: 2 Spalten auf Mobile */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+  }
+
+  /* KPI-Werte kleiner */
+  .kpi-value {
+    font-size: var(--text-xl) !important;
+  }
+
+  /* Chart-Grid: immer einspaltig */
+  .chart-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Form-Grid: einspaltig */
+  .form-grid,
+  .form-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Param-Panel Zonen-Grid */
+  #ps-content [style*="grid-template-columns:1fr 1fr 1fr"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  /* Buttons in Preissignal wrap */
+  .param-panel > div:last-child {
+    flex-wrap: wrap;
+  }
+
+  /* Toast: volle Breite */
+  .toast-container {
+    left: var(--space-3);
+    right: var(--space-3);
+  }
+
+  .toast {
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+  }
+
+  /* Card padding kleiner */
+  .card-body {
+    padding: var(--space-4);
+  }
+
+  .card-header {
+    padding: var(--space-3) var(--space-4);
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  /* Sub-tabs scrollbar */
+  .sub-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Chart-Höhe anpassen */
+  .chart-wrapper[style*="height:260px"] { height: 200px !important; }
+  .chart-wrapper[style*="height:300px"] { height: 220px !important; }
+  .chart-wrapper[style*="height:220px"] { height: 180px !important; }
+  .chart-wrapper[style*="height:200px"] { height: 160px !important; }
+
+  /* Stammdaten berechnete Kacheln: 2er Grid */
+  #stammdaten-kpi { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Tabellen horizontal scrollbar */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Preissignal Zonen-Grid auf Mobile */
+  .zone-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+}
