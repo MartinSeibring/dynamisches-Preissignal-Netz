@@ -10,13 +10,13 @@ export default {
   render(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     container.innerHTML = buildHTML();
-    this.#bindEvents(container, trafoId);
-    this.#updateStats(container, trafoId);
+    this.bindEvents(container, trafoId);
+    this.updateStats(container, trafoId);
   },
 
   destroy() {},
 
-  #bindEvents(container, trafoId) {
+  bindEvents(container, trafoId) {
     const dropZone  = container.querySelector("#drop-zone");
     const fileInput = container.querySelector("#csv-file-input");
     const demoBtn   = container.querySelector("#btn-demo-data");
@@ -32,37 +32,37 @@ export default {
       e.preventDefault();
       dropZone.classList.remove("dragover");
       const file = e.dataTransfer?.files?.[0];
-      if (file) await this.#processFile(container, trafoId, file);
+      if (file) await this.processFile(container, trafoId, file);
     });
     dropZone?.addEventListener("click", () => fileInput?.click());
 
     fileInput?.addEventListener("change", async () => {
       const file = fileInput.files?.[0];
-      if (file) await this.#processFile(container, trafoId, file);
+      if (file) await this.processFile(container, trafoId, file);
       fileInput.value = "";
     });
 
     demoBtn?.addEventListener("click", async () => {
-      await this.#loadDemoData(container, trafoId);
+      await this.loadDemoData(container, trafoId);
     });
 
     clearBtn?.addEventListener("click", async () => {
       if (!confirm("Alle Lastgangdaten löschen?")) return;
       await getApi().saveLastgangLocal(trafoId, []);
       store.set("lastgang_loaded", false);
-      this.#updateStats(container, trafoId);
+      this.updateStats(container, trafoId);
       const preview = container.querySelector("#data-preview-wrap");
       if (preview) preview.innerHTML = "";
       showToast("info", "Daten gelöscht", "Lastgangdaten wurden entfernt.");
     });
   },
 
-  async #processFile(container, trafoId, file) {
+  async processFile(container, trafoId, file) {
     if (!file.name.endsWith(".csv") && file.type !== "text/csv") {
       showToast("warning", "Falsches Format", "Bitte eine CSV-Datei hochladen.");
       return;
     }
-    this.#setLoading(container, true);
+    this.setLoading(container, true);
     try {
       const text = await file.text();
       const entries = parseCsv(text);
@@ -74,17 +74,17 @@ export default {
       store.set("lastgang_count_" + trafoId, entries.length);
 
       showToast("success", "Importiert", `${entries.length} Datenpunkte geladen (${file.name}).`);
-      this.#updateStats(container, trafoId);
-      this.#renderPreview(container, entries.slice(0, 50));
+      this.updateStats(container, trafoId);
+      this.renderPreview(container, entries.slice(0, 50));
     } catch (e) {
       showToast("error", "Import-Fehler", e.message);
     } finally {
-      this.#setLoading(container, false);
+      this.setLoading(container, false);
     }
   },
 
-  async #loadDemoData(container, trafoId) {
-    this.#setLoading(container, true);
+  async loadDemoData(container, trafoId) {
+    this.setLoading(container, true);
     try {
       const api = getApi();
       const trafos = await api.getStammdaten();
@@ -97,16 +97,16 @@ export default {
       store.set("lastgang_count_" + trafoId, entries.length);
 
       showToast("success", "Demo-Daten geladen", `${entries.length} synthetische Messpunkte (30 Tage, 15-min-Auflösung).`);
-      this.#updateStats(container, trafoId);
-      this.#renderPreview(container, entries.slice(0, 50));
+      this.updateStats(container, trafoId);
+      this.renderPreview(container, entries.slice(0, 50));
     } catch (e) {
       showToast("error", "Fehler", e.message);
     } finally {
-      this.#setLoading(container, false);
+      this.setLoading(container, false);
     }
   },
 
-  async #updateStats(container, trafoId) {
+  async updateStats(container, trafoId) {
     try {
       const api  = getApi();
       const data = await api.getLastgang(trafoId);
@@ -144,13 +144,13 @@ export default {
       setTextById(container, "stat-maxp",     maxP + " kW");
       setTextById(container, "stat-avgp",     avgP + " kW");
 
-      this.#renderPreview(container, data.slice(0, 50));
+      this.renderPreview(container, data.slice(0, 50));
     } catch (e) {
       console.error("[lastgang] Statistik-Fehler:", e);
     }
   },
 
-  #renderPreview(container, entries) {
+  renderPreview(container, entries) {
     const wrap = container.querySelector("#data-preview-wrap");
     if (!wrap || !entries.length) return;
     const rows = entries.map(e => `
@@ -178,7 +178,7 @@ export default {
       </div>`;
   },
 
-  #setLoading(container, loading) {
+  setLoading(container, loading) {
     const btn = container.querySelector("#btn-demo-data");
     if (btn) btn.disabled = loading;
     const drop = container.querySelector("#drop-zone");

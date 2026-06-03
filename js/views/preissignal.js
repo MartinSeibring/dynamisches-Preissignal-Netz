@@ -12,8 +12,8 @@ export default {
 
   render(container) {
     container.innerHTML = buildHTML();
-    this.#bindEvents(container);
-    this.#load(container);
+    this.bindEvents(container);
+    this.load(container);
   },
 
   destroy() {
@@ -22,28 +22,28 @@ export default {
     this._signals = null;
   },
 
-  #bindEvents(container) {
+  bindEvents(container) {
     container.querySelector("#btn-calc-signal")
-      ?.addEventListener("click", () => this.#calculate(container));
+      ?.addEventListener("click", () => this.calculate(container));
 
     container.querySelector("#btn-export-csv")
-      ?.addEventListener("click", () => this.#exportCsv());
+      ?.addEventListener("click", () => this.exportCsv());
 
     container.querySelector("#btn-export-today")
-      ?.addEventListener("click", () => this.#exportToday());
+      ?.addEventListener("click", () => this.exportToday());
 
     // Live-Vorschau bei Parameter-Änderung
     const inputs = container.querySelectorAll(".signal-param");
     inputs.forEach(input => {
-      input.addEventListener("change", () => this.#calculate(container));
+      input.addEventListener("change", () => this.calculate(container));
     });
 
     // Tagesselektor
     container.querySelector("#signal-day-select")
-      ?.addEventListener("change", () => this.#renderDayChart(container));
+      ?.addEventListener("change", () => this.renderDayChart(container));
   },
 
-  async #load(container) {
+  async load(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     try {
       const api     = getApi();
@@ -54,13 +54,13 @@ export default {
         return;
       }
       store.set("lastgang_cache_ps_" + trafoId, lastgang);
-      await this.#calculate(container);
+      await this.calculate(container);
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
   },
 
-  async #calculate(container) {
+  async calculate(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     const api = getApi();
     const trafos = await api.getStammdaten();
@@ -81,14 +81,14 @@ export default {
     container.querySelector("#no-data-ps").style.display = "none";
     container.querySelector("#ps-content").style.display = "";
 
-    this.#renderKpis(container, signals, params);
-    this.#populateDaySelector(container, signals);
-    this.#renderDayChart(container);
-    this.#renderDailySummaryChart(container, signals);
-    this.#renderTable(container, signals);
+    this.renderKpis(container, signals, params);
+    this.populateDaySelector(container, signals);
+    this.renderDayChart(container);
+    this.renderDailySummaryChart(container, signals);
+    this.renderTable(container, signals);
   },
 
-  #renderKpis(container, signals, params) {
+  renderKpis(container, signals, params) {
     const utils  = signals.map(s => s.util);
     const prices = signals.map(s => s.price);
     const dist   = priceEngine.zoneDistribution(signals);
@@ -110,7 +110,7 @@ export default {
     }
   },
 
-  #populateDaySelector(container, signals) {
+  populateDaySelector(container, signals) {
     const sel = container.querySelector("#signal-day-select");
     if (!sel) return;
     const days = [...new Set(signals.map(s => s.ts.substring(0, 10)))];
@@ -121,7 +121,7 @@ export default {
     if (days.length) sel.value = days[days.length - 1];
   },
 
-  #renderDayChart(container) {
+  renderDayChart(container) {
     const sel = container.querySelector("#signal-day-select");
     const day = sel?.value;
     if (!day || !this._signals) return;
@@ -136,7 +136,7 @@ export default {
     });
   },
 
-  #renderDailySummaryChart(container, signals) {
+  renderDailySummaryChart(container, signals) {
     const canvas = container.querySelector("#signal-daily-canvas");
     if (!canvas) return;
 
@@ -171,7 +171,7 @@ export default {
     });
   },
 
-  #renderTable(container, signals) {
+  renderTable(container, signals) {
     const day = container.querySelector("#signal-day-select")?.value;
     const tbody = container.querySelector("#signal-tbody");
     if (!tbody) return;
@@ -190,7 +190,7 @@ export default {
       </tr>`).join("");
   },
 
-  #exportCsv() {
+  exportCsv() {
     if (!this._signals?.length) { showToast("warning", "Keine Daten", "Zuerst Signale berechnen."); return; }
     const csv = priceEngine.toCsvString(this._signals);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -201,7 +201,7 @@ export default {
     showToast("success", "Export", "CSV-Datei wird heruntergeladen.");
   },
 
-  #exportToday() {
+  exportToday() {
     if (!this._signals?.length) { showToast("warning", "Keine Daten", "Zuerst Signale berechnen."); return; }
     const todayStr = new Date().toISOString().substring(0, 10);
     const todaySignals = this._signals.filter(s => s.ts.startsWith(todayStr));

@@ -11,7 +11,7 @@ export default {
 
   render(container) {
     container.innerHTML = buildHTML();
-    this.#load(container);
+    this.load(container);
   },
 
   destroy() {
@@ -21,7 +21,7 @@ export default {
     chartManager.destroy("daily-max");
   },
 
-  async #load(container) {
+  async load(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     try {
       const api = getApi();
@@ -39,18 +39,18 @@ export default {
       }
 
       const signals = priceEngine.generate(lastgang, nenn, DEFAULT_PARAMS);
-      this.#renderKpis(container, signals, nenn);
-      this.#renderLoadChart(container, lastgang, nenn, signals);
-      this.#renderHourlyChart(container, lastgang, nenn);
-      this.#renderZoneChart(container, signals);
-      this.#renderDailyMaxChart(container, signals, nenn);
-      this.#renderStatsTable(container, signals, nenn);
+      this.renderKpis(container, signals, nenn);
+      this.renderLoadChart(container, lastgang, nenn, signals);
+      this.renderHourlyChart(container, lastgang, nenn);
+      this.renderZoneChart(container, signals);
+      this.renderDailyMaxChart(container, signals, nenn);
+      this.renderStatsTable(container, signals, nenn);
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
   },
 
-  #renderKpis(container, signals, nenn) {
+  renderKpis(container, signals, nenn) {
     const utils = signals.map(s => s.util).filter(isFinite);
     const powers = signals.map(s => s.s).filter(isFinite);
 
@@ -67,7 +67,7 @@ export default {
     setKpi(container, "kpi-redhours", hoursRed.toFixed(1), "h",   hoursRed > 0 ? "zone-red" : "zone-green");
   },
 
-  #renderLoadChart(container, lastgang, nenn, signals) {
+  renderLoadChart(container, lastgang, nenn, signals) {
     const canvas = container.querySelector("#chart-load");
     if (!canvas) return;
 
@@ -117,7 +117,7 @@ export default {
     });
   },
 
-  #renderHourlyChart(container, lastgang, nenn) {
+  renderHourlyChart(container, lastgang, nenn) {
     const canvas = container.querySelector("#chart-hourly");
     if (!canvas) return;
 
@@ -147,7 +147,7 @@ export default {
     });
   },
 
-  #renderZoneChart(container, signals) {
+  renderZoneChart(container, signals) {
     const canvas = container.querySelector("#chart-zones");
     if (!canvas) return;
     const dist = priceEngine.zoneDistribution(signals);
@@ -182,7 +182,7 @@ export default {
       `${pct(dist.green + dist.yellow)}% OK`);
   },
 
-  #renderDailyMaxChart(container, signals, nenn) {
+  renderDailyMaxChart(container, signals, nenn) {
     const canvas = container.querySelector("#chart-daily-max");
     if (!canvas) return;
 
@@ -211,7 +211,7 @@ export default {
     });
   },
 
-  #renderStatsTable(container, signals, nenn) {
+  renderStatsTable(container, signals, nenn) {
     const tbody = container.querySelector("#stats-tbody");
     if (!tbody) return;
 

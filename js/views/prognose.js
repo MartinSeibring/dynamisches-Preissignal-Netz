@@ -18,20 +18,20 @@ export default {
 
   render(container) {
     container.innerHTML = buildHTML();
-    this.#bindEvents(container);
-    this.#load(container);
+    this.bindEvents(container);
+    this.load(container);
   },
 
   destroy() {
     chartManager.destroy("forecast-chart");
   },
 
-  #bindEvents(container) {
+  bindEvents(container) {
     const methodSel = container.querySelector("#fc-method");
-    methodSel?.addEventListener("change", () => this.#toggleParams(container));
+    methodSel?.addEventListener("change", () => this.toggleParams(container));
 
     container.querySelector("#btn-run-forecast")
-      ?.addEventListener("click", () => this.#runForecast(container));
+      ?.addEventListener("click", () => this.runForecast(container));
 
     // Dynamische Range-Labels
     ["alpha","beta","gamma"].forEach(p => {
@@ -41,14 +41,14 @@ export default {
     });
   },
 
-  async #load(container) {
+  async load(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     try {
       const api     = getApi();
       const lastgang = await api.getLastgang(trafoId);
       if (lastgang.length) {
         store.set("lastgang_cache_" + trafoId, lastgang);
-        this.#runForecast(container);
+        this.runForecast(container);
       } else {
         container.querySelector("#no-data-fc").style.display = "";
         container.querySelector("#fc-result").style.display = "none";
@@ -58,7 +58,7 @@ export default {
     }
   },
 
-  #toggleParams(container) {
+  toggleParams(container) {
     const method = container.querySelector("#fc-method")?.value;
     const m = METHODS.find(m => m.value === method);
     const allParams = ["window","alpha","beta","gamma","seasonLen","horizont"];
@@ -68,7 +68,7 @@ export default {
     });
   },
 
-  async #runForecast(container) {
+  async runForecast(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     const method  = container.querySelector("#fc-method")?.value || "holtwinters";
     const horizont = parseInt(container.querySelector("#fc-horizont")?.value) || 96;
@@ -116,7 +116,7 @@ export default {
         });
       }
 
-      this.#renderResult(container, result, params);
+      this.renderResult(container, result, params);
     } catch (e) {
       showToast("error", "Prognose-Fehler", e.message);
     } finally {
@@ -124,7 +124,7 @@ export default {
     }
   },
 
-  #renderResult(container, result, params) {
+  renderResult(container, result, params) {
     const fc = container.querySelector("#fc-result");
     if (fc) fc.style.display = "";
     container.querySelector("#no-data-fc").style.display = "none";
@@ -143,13 +143,13 @@ export default {
 
     // Chart
     const canvas = container.querySelector("#forecast-chart-canvas");
-    if (canvas) this.#renderChart(canvas, result);
+    if (canvas) this.renderChart(canvas, result);
 
     // Tabelle
-    this.#renderTable(container, result);
+    this.renderTable(container, result);
   },
 
-  #renderChart(canvas, result) {
+  renderChart(canvas, result) {
     const histTs  = result._histTs  || [];
     const histVal = result._histVal || result.fitted || [];
     const fcTs    = result._fcTs    || [];
@@ -224,7 +224,7 @@ export default {
     );
   },
 
-  #renderTable(container, result) {
+  renderTable(container, result) {
     const tbody = container.querySelector("#fc-table-body");
     if (!tbody) return;
     const fcTs   = result._fcTs   || [];
