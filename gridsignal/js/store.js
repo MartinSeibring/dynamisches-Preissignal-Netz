@@ -159,6 +159,8 @@ export function getDemoStammdaten() {
       schaltgruppe: "Dyn5",
       kurzschlussspannung: 4.0,
       kosFi: 0.92,
+      lat: 48.13513,
+      lon: 11.58198,
     },
   ];
 }
