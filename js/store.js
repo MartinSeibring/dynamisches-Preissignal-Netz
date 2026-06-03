@@ -145,6 +145,31 @@ function seasonalFactor(date) {
 
 function round2(v) { return Math.round(v * 100) / 100; }
 
+// ── Stationsflotte ─────────────────────────────────────────────────────────────
+
+const LS_FLEET = "gs_fleet";
+
+export function getTrafoIds() {
+  try { return JSON.parse(localStorage.getItem(LS_FLEET) || '["trafo-1"]'); }
+  catch { return ["trafo-1"]; }
+}
+
+export function addTrafoId(id) {
+  const ids = getTrafoIds();
+  if (!ids.includes(id)) localStorage.setItem(LS_FLEET, JSON.stringify([...ids, id]));
+}
+
+export function removeTrafoId(id) {
+  const ids = getTrafoIds().filter(i => i !== id);
+  localStorage.setItem(LS_FLEET, JSON.stringify(ids.length ? ids : ["trafo-1"]));
+}
+
+export function nextTrafoId() {
+  const ids  = getTrafoIds();
+  const nums = ids.map(id => parseInt(id.replace("trafo-", ""))).filter(n => !isNaN(n));
+  return `trafo-${nums.length ? Math.max(...nums) + 1 : 2}`;
+}
+
 /** Demo-Stammdaten (Werte technisch korrekt für SWM-Netz München: 10-kV-MS-Netz, Dyn5, uk=4 %) */
 export function getDemoStammdaten() {
   return [
