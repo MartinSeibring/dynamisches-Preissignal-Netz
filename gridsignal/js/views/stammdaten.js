@@ -10,24 +10,24 @@ export default {
   render(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     container.innerHTML = buildHTML();
-    this.#bindEvents(container, trafoId);
-    this.#loadData(container, trafoId);
+    this.bindEvents(container, trafoId);
+    this.loadData(container, trafoId);
   },
 
   destroy() {},
 
-  #bindEvents(container, trafoId) {
+  bindEvents(container, trafoId) {
     const form  = container.querySelector("#stammdaten-form");
     const saveBtn = container.querySelector("#btn-save-stammdaten");
     const demoBtn = container.querySelector("#btn-demo-stammdaten");
 
     saveBtn?.addEventListener("click", async () => {
       if (!form.checkValidity()) { form.reportValidity(); return; }
-      await this.#save(container);
+      await this.save(container);
     });
 
     demoBtn?.addEventListener("click", () => {
-      this.#fillDemo(container);
+      this.fillDemo(container);
     });
 
     // Echtzeit-Berechnung kVA→kW
@@ -45,18 +45,18 @@ export default {
     cosfi?.addEventListener("input", updateKw);
   },
 
-  async #loadData(container, trafoId) {
+  async loadData(container, trafoId) {
     try {
       const api = getApi();
       const trafos = await api.getStammdaten();
       const trafo = trafos.find(t => t.id === trafoId) || trafos[0];
-      if (trafo) this.#fillForm(container, trafo);
+      if (trafo) this.fillForm(container, trafo);
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
   },
 
-  #fillForm(container, data) {
+  fillForm(container, data) {
     const fields = ["name","nennleistung","spannungOS","spannungUS",
                     "baujahr","standort","schaltgruppe","kurzschlussspannung","kosFi"];
     fields.forEach(f => {
@@ -72,13 +72,13 @@ export default {
     }
   },
 
-  #fillDemo(container) {
+  fillDemo(container) {
     const demo = getDemoStammdaten()[0];
-    this.#fillForm(container, demo);
+    this.fillForm(container, demo);
     showToast("info", "Demo-Daten geladen", "Formulare mit Beispieldaten befüllt.");
   },
 
-  async #save(container) {
+  async save(container) {
     const btn = container.querySelector("#btn-save-stammdaten");
     btn.classList.add("btn-loading");
     btn.disabled = true;
