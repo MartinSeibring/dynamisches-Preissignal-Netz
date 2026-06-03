@@ -1,5 +1,5 @@
 import { getApi } from "../api.js";
-import { store } from "../store.js";
+import { store, getTrafoIds } from "../store.js";
 import { chartManager } from "../charts.js";
 import { showToast } from "../toast.js";
 import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js";
@@ -32,6 +32,8 @@ export default {
       const trafo = trafos.find(t => t.id === trafoId);
       const nenn  = trafo?.nennleistung || 630;
 
+      await this.renderFleetOverview(container, trafos, trafoId, api);
+
       if (!lastgang.length) {
         container.querySelector("#no-data-msg").style.display = "";
         container.querySelector("#auslastung-content").style.display = "none";
@@ -48,6 +50,57 @@ export default {
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
+  },
+
+  async renderFleetOverview(container, trafos, activeId, api) {
+    const tbody = container.querySelector("#fleet-overview-tbody");
+    if (!tbody) return;
+
+    const ids      = getTrafoIds();
+    const stations = ids.map(id => {
+      const t = trafos.find(t => t.id === id);
+      const s = store.get("stammdaten_" + id);
+      return t || s || { id, name: id };
+    }).filter(Boolean);
+
+    if (stations.length <= 1) {
+      container.querySelector("#fleet-overview-card")?.style.setProperty("display", "none");
+      return;
+    }
+
+    // Check which stations have Lastgang data (parallel)
+    const hasData = await Promise.all(
+      stations.map(s => api.getLastgang(s.id).then(lg => lg.length > 0).catch(() => false))
+    );
+
+    tbody.innerHTML = stations.map((s, i) => {
+      const isActive  = s.id === activeId;
+      const hasLastgang = hasData[i];
+      return `
+        <tr style="${isActive ? "background:var(--color-surface-alt);font-weight:600" : ""}">
+          <td>${isActive ? `<span class="zone-badge green" style="font-size:var(--text-xs)">Analysiert</span>` : ""}</td>
+          <td>${s.name || s.id}</td>
+          <td class="mono right">${s.nennleistung ? s.nennleistung + " kVA" : "–"}</td>
+          <td style="text-align:center">
+            ${hasLastgang
+              ? `<span style="color:var(--color-zone-green)">✓ vorhanden</span>`
+              : `<span style="color:var(--color-text-secondary)">–</span>`}
+          </td>
+          <td>
+            ${!isActive && hasLastgang
+              ? `<button class="btn btn-ghost btn-sm fleet-analyze" data-id="${s.id}"
+                         style="font-size:var(--text-xs)">Analysieren</button>`
+              : ""}
+          </td>
+        </tr>`;
+    }).join("");
+
+    tbody.querySelectorAll(".fleet-analyze").forEach(btn => {
+      btn.addEventListener("click", () => {
+        store.set("activeTrafoId", btn.dataset.id);
+        this.render(container);
+      });
+    });
   },
 
   renderKpis(container, signals, nenn) {
@@ -270,6 +323,28 @@ function buildHTML() {
 <div class="view-header">
   <div class="view-title">Auslastung</div>
   <div class="view-subtitle">Trafo-Auslastung analysieren – Spitzenwerte, Zonenzuordnung, Tagesmuster</div>
+</div>
+
+<!-- Stationsflotte (nur sichtbar wenn > 1 Station) -->
+<div class="card" id="fleet-overview-card" style="margin-bottom:var(--space-4)">
+  <div class="card-header">
+    <div class="card-title">Stationsflotte</div>
+    <div class="card-subtitle" style="font-size:var(--text-sm)">Klick auf „Analysieren" wechselt die aktive Station</div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr>
+        <th></th>
+        <th>Station</th>
+        <th class="right">Nennleistung</th>
+        <th style="text-align:center">Lastgang</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="fleet-overview-tbody">
+        <tr><td colspan="5" style="text-align:center;color:var(--color-text-secondary)">Lade…</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <div id="no-data-msg" class="alert alert-warning" style="display:none">
