@@ -145,17 +145,17 @@ function seasonalFactor(date) {
 
 function round2(v) { return Math.round(v * 100) / 100; }
 
-/** Demo-Stammdaten */
+/** Demo-Stammdaten (Werte technisch korrekt für SWM-Netz München: 10-kV-MS-Netz, Dyn5, uk=4 %) */
 export function getDemoStammdaten() {
   return [
     {
       id: "trafo-1",
       name: "Trafostation Mitte",
       nennleistung: 630,
-      spannungOS: 20,
+      spannungOS: 10,      // SWM München: Mittelspannungsnetz 10 kV
       spannungUS: 0.4,
       baujahr: 2008,
-      standort: "Hauptstraße 42, 12345 Musterstadt",
+      standort: "Musterstraße 1, 80331 München",
       schaltgruppe: "Dyn5",
       kurzschlussspannung: 4.0,
       kosFi: 0.92,
