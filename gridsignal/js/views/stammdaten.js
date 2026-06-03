@@ -14,7 +14,7 @@ export default {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     container.innerHTML = buildHTML();
     this.bindEvents(container, trafoId);
-    this.loadData(container, trafoId);
+    this.loadData(container, trafoId);   // pending OSM import is applied inside loadData
   },
 
   destroy() {},
@@ -54,6 +54,13 @@ export default {
       const trafos = await api.getStammdaten();
       const trafo  = trafos.find(t => t.id === trafoId) || trafos[0];
       if (trafo) this.fillForm(container, trafo);
+
+      // OSM-Import aus Kartenansicht übernehmen (wird nach loadData angewendet)
+      const pending = store.get("osm_pending_import");
+      if (pending) {
+        store.set("osm_pending_import", null);
+        this.fillFromOsmStation(container, pending);
+      }
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
@@ -264,10 +271,8 @@ out center tags;`;
     const vOS = voltages[0] ? voltages[0] / 1000 : null;
     const vUS = voltages.length > 1 ? voltages[voltages.length - 1] / 1000 : null;
 
-    const nameEl = container.querySelector("#f-name");
-    if (nameEl && !nameEl.value.trim() && station.name) {
-      nameEl.value = station.name;
-    }
+    // Name immer übernehmen wenn OSM einen hat (Bug-Fix: keine Leer-Bedingung)
+    if (station.name) setVal(container, "#f-name", station.name);
 
     if (vOS) setVal(container, "#f-spannungos", vOS);
     if (vUS) setVal(container, "#f-spannungus", vUS);
