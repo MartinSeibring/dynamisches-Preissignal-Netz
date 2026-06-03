@@ -28,6 +28,10 @@
     }
   </style>
 
+  <!-- Leaflet (interaktive Karte) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
@@ -45,6 +49,7 @@
     import auslastungView  from "./js/views/auslastung.js";
     import prognoseView    from "./js/views/prognose.js";
     import preissignalView from "./js/views/preissignal.js";
+    import karteView       from "./js/views/karte.js";
 
     // ── 1. Brand & Fonts anwenden ──────────────────────────────────────────
     const darkMode = store.get("darkMode", false);
@@ -57,7 +62,7 @@
 
     // ── 3. App-Shell aufbauen ──────────────────────────────────────────────
     function buildShell() {
-      const views = [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView];
+      const views = [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView, karteView];
 
       // Logo
       const logoArea = document.getElementById("logo-area");
@@ -233,7 +238,7 @@
       const container = document.getElementById("view-container");
       router.init(container);
 
-      [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView]
+      [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView, karteView]
         .forEach(v => router.register(v.id, v));
 
       // Dark mode bei Chart-Initialisierung
