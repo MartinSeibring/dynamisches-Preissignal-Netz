@@ -169,13 +169,8 @@ export default {
       const api      = getApi();
       const trafos   = await api.getStammdaten();
       const activeId = store.get("activeTrafoId", "trafo-1");
-      const allIds   = getTrafoIds();
-
-      const stations = allIds.map(id => {
-        const fromApi   = trafos.find(t => t.id === id);
-        const fromStore = store.get("stammdaten_" + id);
-        return fromApi || fromStore || { id, name: id };
-      }).filter(Boolean);
+      trafos.forEach(t => addTrafoId(t.id));
+      const stations = trafos;
 
       if (!stations.length) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--color-text-secondary)">Keine Stationen vorhanden.</td></tr>`;
@@ -319,16 +314,26 @@ out center tags;`;
     }
 
     resultsEl.innerHTML = `
-      <div style="display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) 0 var(--space-2)">
+      <div style="display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) 0 var(--space-2);flex-wrap:wrap">
         <input class="form-input" id="osm-filter" placeholder="Nach Name oder Betreiber filtern…"
-               style="max-width:300px;height:32px;font-size:var(--text-sm)">
+               style="max-width:260px;height:32px;font-size:var(--text-sm)">
         <span style="font-size:var(--text-sm);color:var(--color-text-secondary)" id="osm-count">
           ${stations.length} Stationen
         </span>
+        <button class="btn btn-primary btn-sm" id="btn-bulk-import" disabled
+                style="margin-left:auto;white-space:nowrap">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Ausgewählte importieren (0)
+        </button>
       </div>
-      <div class="table-wrapper" style="max-height:280px;overflow-y:auto">
+      <div class="table-wrapper" style="max-height:300px;overflow-y:auto">
         <table>
           <thead><tr>
+            <th style="width:36px;padding-right:0">
+              <input type="checkbox" id="osm-select-all" title="Alle sichtbaren auswählen">
+            </th>
             <th>Name / Ref</th><th>Betreiber</th><th>Spannung</th>
             <th class="mono" style="font-size:var(--text-xs)">GPS</th><th></th>
           </tr></thead>
@@ -336,9 +341,32 @@ out center tags;`;
         </table>
       </div>`;
 
+    const selectedIds = new Set();
+
+    const updateBulkBtn = () => {
+      const btn = container.querySelector("#btn-bulk-import");
+      if (!btn) return;
+      btn.disabled = selectedIds.size === 0;
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Ausgewählte importieren (${selectedIds.size})`;
+    };
+
+    const syncSelectAll = (tbody) => {
+      const allChk     = container.querySelector("#osm-select-all");
+      if (!allChk) return;
+      const chks       = [...tbody.querySelectorAll(".osm-row-check")];
+      const allChecked = chks.length > 0 && chks.every(c => c.checked);
+      const someChecked = chks.some(c => c.checked);
+      allChk.checked       = allChecked;
+      allChk.indeterminate = !allChecked && someChecked;
+    };
+
     const renderRows = (filter = "") => {
-      const tbody    = container.querySelector("#osm-tbody");
-      const countEl  = container.querySelector("#osm-count");
+      const tbody   = container.querySelector("#osm-tbody");
+      const countEl = container.querySelector("#osm-count");
       const filtered = filter
         ? stations.filter(s =>
             s.name.toLowerCase().includes(filter) ||
@@ -349,6 +377,10 @@ out center tags;`;
 
       tbody.innerHTML = filtered.slice(0, 250).map(s => `
         <tr>
+          <td style="width:36px;padding-right:0">
+            <input type="checkbox" class="osm-row-check" data-osm-id="${s.osmId}"
+                   ${selectedIds.has(s.osmId) ? "checked" : ""}>
+          </td>
           <td class="mono" style="font-size:var(--text-sm)">${s.name || `<span style="color:var(--color-text-secondary)">–</span>`}</td>
           <td style="font-size:var(--text-sm)">${s.operator || "–"}</td>
           <td class="mono" style="font-size:var(--text-sm)">${formatVoltage(s.voltage)}</td>
@@ -357,6 +389,15 @@ out center tags;`;
                       style="white-space:nowrap">Übernehmen</button></td>
         </tr>`).join("");
 
+      tbody.querySelectorAll(".osm-row-check").forEach(chk => {
+        chk.addEventListener("change", () => {
+          const id = parseInt(chk.dataset.osmId);
+          if (chk.checked) selectedIds.add(id); else selectedIds.delete(id);
+          syncSelectAll(tbody);
+          updateBulkBtn();
+        });
+      });
+
       tbody.querySelectorAll(".osm-pick").forEach(btn => {
         btn.addEventListener("click", () => {
           const osmId   = parseInt(btn.dataset.osmId);
@@ -364,12 +405,85 @@ out center tags;`;
           if (station) this.fillFromOsmStation(container, station);
         });
       });
+
+      syncSelectAll(tbody);
     };
 
     renderRows();
+
     container.querySelector("#osm-filter")?.addEventListener("input", e => {
       renderRows(e.target.value.toLowerCase().trim());
     });
+
+    container.querySelector("#osm-select-all")?.addEventListener("change", e => {
+      const tbody = container.querySelector("#osm-tbody");
+      tbody.querySelectorAll(".osm-row-check").forEach(chk => {
+        chk.checked = e.target.checked;
+        const id = parseInt(chk.dataset.osmId);
+        if (e.target.checked) selectedIds.add(id); else selectedIds.delete(id);
+      });
+      updateBulkBtn();
+    });
+
+    container.querySelector("#btn-bulk-import")?.addEventListener("click", () => {
+      const toImport = stations.filter(s => selectedIds.has(s.osmId));
+      if (!toImport.length) return;
+      this.bulkImportOsmStations(container, toImport);
+    });
+  },
+
+  async bulkImportOsmStations(container, stations) {
+    const btn = container.querySelector("#btn-bulk-import");
+    if (btn) { btn.disabled = true; btn.classList.add("btn-loading"); }
+
+    const api = getApi();
+    let importCount = 0;
+    const errors = [];
+
+    for (const station of stations) {
+      try {
+        const newId    = nextTrafoId();
+        const voltages = (station.voltage || "").split(";")
+          .map(v => parseInt(v)).filter(v => v > 0 && isFinite(v));
+        const vOS = voltages[0]            ? voltages[0] / 1000            : 10;
+        const vUS = voltages.length > 1    ? voltages[voltages.length - 1] / 1000 : 0.4;
+
+        const data = {
+          id:                  newId,
+          name:                station.name || `OSM-${station.osmId}`,
+          nennleistung:        0,
+          spannungOS:          vOS,
+          spannungUS:          vUS,
+          baujahr:             null,
+          standort:            station.operator ? `Betreiber: ${station.operator}` : "",
+          schaltgruppe:        "",
+          kurzschlussspannung: 0,
+          kosFi:               0.92,
+          lat:                 station.lat,
+          lon:                 station.lon,
+        };
+
+        await api.saveStammdaten(data);
+        addTrafoId(newId);
+        store.set("stammdaten_" + newId, data);
+        importCount++;
+      } catch (e) {
+        errors.push(station.name || String(station.osmId));
+      }
+    }
+
+    if (btn) { btn.disabled = false; btn.classList.remove("btn-loading"); }
+
+    if (importCount > 0) {
+      const pl = importCount !== 1 ? "en" : "";
+      showToast("success", "Bulk-Import abgeschlossen",
+        `${importCount} Station${pl} zur Flotte hinzugefügt.`);
+      await this.loadFleet(container);
+    }
+    if (errors.length > 0) {
+      showToast("error", "Import-Fehler",
+        `${errors.length} Station${errors.length !== 1 ? "en" : ""} fehlgeschlagen.`);
+    }
   },
 
   fillFromOsmStation(container, station) {
@@ -606,8 +720,9 @@ function buildHTML() {
     <div class="alert alert-info">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/>
         <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      <div>Daten aus <strong>OpenStreetMap</strong> via Overpass API (Bounding Box München).
-        Klick auf <strong>Übernehmen</strong> füllt das Formular · dann <strong>Neue Station anlegen</strong>.</div>
+      <div>Daten aus <strong>OpenStreetMap</strong> via Overpass API (Bounding Box München).<br>
+        <strong>Einzeln:</strong> Klick auf <strong>Übernehmen</strong> füllt das Formular, dann <strong>Neue Station anlegen</strong>.<br>
+        <strong>Bulk:</strong> Stationen per Checkbox auswählen · <strong>Ausgewählte importieren</strong> legt alle auf einmal an.</div>
     </div>
     <div id="osm-results"></div>
   </div>
