@@ -26,6 +26,39 @@ export default {
     chartManager.destroy("forecast-chart");
   },
 
+  async renderStationSelector(container) {
+    const api    = getApi();
+    const trafos = await api.getStammdaten();
+    if (trafos.length <= 1) return;
+
+    const card = container.querySelector("#prognose-station-card");
+    if (card) card.style.display = "";
+
+    const sel    = container.querySelector("#prognose-station-sel");
+    const filter = container.querySelector("#prognose-station-filter");
+    const active = store.get("activeTrafoId", "trafo-1");
+
+    const populate = (txt = "") => {
+      const lf = txt.toLowerCase();
+      const visible = lf
+        ? trafos.filter(t =>
+            (t.name || "").toLowerCase().includes(lf) ||
+            (t.plz  || "").toLowerCase().includes(lf))
+        : trafos;
+      sel.innerHTML = visible.map(t =>
+        `<option value="${t.id}" ${t.id === active ? "selected" : ""}>${t.name || t.id}${t.plz ? " · " + t.plz : ""}</option>`
+      ).join("");
+    };
+
+    populate();
+    filter?.addEventListener("input", e => populate(e.target.value.trim()));
+
+    sel.onchange = () => {
+      store.set("activeTrafoId", sel.value);
+      this.load(container);
+    };
+  },
+
   bindEvents(container) {
     const methodSel = container.querySelector("#fc-method");
     methodSel?.addEventListener("change", () => this.toggleParams(container));
@@ -43,6 +76,7 @@ export default {
 
   async load(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
+    await this.renderStationSelector(container);
     try {
       const api     = getApi();
       const lastgang = await api.getLastgang(trafoId);
@@ -267,6 +301,17 @@ function buildHTML() {
 <div class="view-header">
   <div class="view-title">Prognose</div>
   <div class="view-subtitle">Lastprognose für die nächsten 24 Stunden (96 × 15-min-Slots)</div>
+</div>
+
+<!-- Station selector (hidden when fleet has only 1 station) -->
+<div class="card" id="prognose-station-card" style="display:none;margin-bottom:var(--space-4)">
+  <div class="card-body" style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+    <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex-shrink:0"><rect x="2" y="3" width="20" height="6" rx="1"/><rect x="2" y="9" width="20" height="6" rx="1"/><rect x="2" y="15" width="20" height="6" rx="1"/></svg>
+    <label class="form-label" style="margin:0;white-space:nowrap">Station für Prognose:</label>
+    <input class="form-input" id="prognose-station-filter" placeholder="PLZ oder Name filtern…"
+           style="max-width:180px;height:32px;font-size:var(--text-sm)">
+    <select id="prognose-station-sel" class="form-select" style="max-width:340px;height:32px;font-size:var(--text-sm)"></select>
+  </div>
 </div>
 
 <div id="no-data-fc" class="alert alert-warning" style="display:none">

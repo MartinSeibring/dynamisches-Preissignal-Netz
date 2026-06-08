@@ -1,5 +1,5 @@
 import { getApi } from "../api.js";
-import { store, getTrafoIds } from "../store.js";
+import { store } from "../store.js";
 import { chartManager } from "../charts.js";
 import { showToast } from "../toast.js";
 import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js";
@@ -56,12 +56,7 @@ export default {
     const tbody = container.querySelector("#fleet-overview-tbody");
     if (!tbody) return;
 
-    const ids      = getTrafoIds();
-    const stations = ids.map(id => {
-      const t = trafos.find(t => t.id === id);
-      const s = store.get("stammdaten_" + id);
-      return t || s || { id, name: id };
-    }).filter(Boolean);
+    const stations = trafos;
 
     if (stations.length <= 1) {
       container.querySelector("#fleet-overview-card")?.style.setProperty("display", "none");
@@ -80,6 +75,7 @@ export default {
         <tr style="${isActive ? "background:var(--color-surface-alt);font-weight:600" : ""}">
           <td>${isActive ? `<span class="zone-badge green" style="font-size:var(--text-xs)">Analysiert</span>` : ""}</td>
           <td>${s.name || s.id}</td>
+          <td style="font-size:var(--text-xs)">${s.plz || "–"}</td>
           <td class="mono right">${s.nennleistung ? s.nennleistung + " kVA" : "–"}</td>
           <td style="text-align:center">
             ${hasLastgang
@@ -336,12 +332,13 @@ function buildHTML() {
       <thead><tr>
         <th></th>
         <th>Station</th>
+        <th>PLZ</th>
         <th class="right">Nennleistung</th>
         <th style="text-align:center">Lastgang</th>
         <th></th>
       </tr></thead>
       <tbody id="fleet-overview-tbody">
-        <tr><td colspan="5" style="text-align:center;color:var(--color-text-secondary)">Lade…</td></tr>
+        <tr><td colspan="6" style="text-align:center;color:var(--color-text-secondary)">Lade…</td></tr>
       </tbody>
     </table>
   </div>

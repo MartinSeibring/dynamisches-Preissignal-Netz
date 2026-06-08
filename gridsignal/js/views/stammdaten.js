@@ -79,7 +79,7 @@ export default {
 
   fillForm(container, data) {
     const fields = ["name","nennleistung","spannungOS","spannungUS",
-                    "baujahr","standort","schaltgruppe","kurzschlussspannung","kosFi"];
+                    "baujahr","standort","plz","schaltgruppe","kurzschlussspannung","kosFi"];
     fields.forEach(f => {
       const el = container.querySelector(`#f-${f.toLowerCase()}`);
       if (el) el.value = data[f] ?? "";
@@ -286,6 +286,7 @@ out center tags;`;
           operator:   el.tags?.operator || "",
           voltage:    el.tags?.voltage  || "",
           substation: el.tags?.substation || "",
+          plz: el.tags?.["addr:postcode"] || "",
         }))
         .filter(s => s.lat && s.lon);
 
@@ -313,120 +314,138 @@ out center tags;`;
       return;
     }
 
+    this._osmSel = new Set(); // reset selection
+
     resultsEl.innerHTML = `
-      <div style="display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) 0 var(--space-2);flex-wrap:wrap">
-        <input class="form-input" id="osm-filter" placeholder="Nach Name oder Betreiber filtern…"
-               style="max-width:260px;height:32px;font-size:var(--text-sm)">
-        <span style="font-size:var(--text-sm);color:var(--color-text-secondary)" id="osm-count">
+      <div style="display:flex;align-items:center;gap:var(--space-2);margin:var(--space-3) 0 var(--space-2);flex-wrap:wrap">
+        <input class="form-input" id="osm-filter" placeholder="Name, Betreiber oder PLZ filtern…"
+               style="flex:1;min-width:180px;max-width:300px;height:32px;font-size:var(--text-sm)">
+        <span style="font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap" id="osm-count">
           ${stations.length} Stationen
         </span>
-        <button class="btn btn-primary btn-sm" id="btn-bulk-import" disabled
-                style="margin-left:auto;white-space:nowrap">
-          <svg viewBox="0 0 24 24" style="width:14px;height:14px">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          Ausgewählte importieren (0)
-        </button>
+        <div style="display:flex;gap:var(--space-2);margin-left:auto;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="btn-osm-sel-all" style="white-space:nowrap">Alle wählen</button>
+          <button class="btn btn-ghost btn-sm" id="btn-osm-desel" style="white-space:nowrap">Auswahl aufheben</button>
+          <button class="btn btn-primary btn-sm" id="btn-bulk-import" disabled style="white-space:nowrap">
+            <svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Importieren (0)
+          </button>
+        </div>
       </div>
-      <div class="table-wrapper" style="max-height:300px;overflow-y:auto">
+      <div class="table-wrapper" style="max-height:320px;overflow-y:auto">
         <table>
           <thead><tr>
-            <th style="width:36px;padding-right:0">
-              <input type="checkbox" id="osm-select-all" title="Alle sichtbaren auswählen">
-            </th>
-            <th>Name / Ref</th><th>Betreiber</th><th>Spannung</th>
+            <th style="width:36px"><input type="checkbox" id="osm-chk-all" title="Alle sichtbaren"></th>
+            <th>Name / Ref</th><th>PLZ</th><th>Betreiber</th>
             <th class="mono" style="font-size:var(--text-xs)">GPS</th><th></th>
           </tr></thead>
           <tbody id="osm-tbody"></tbody>
         </table>
       </div>`;
 
-    const selectedIds = new Set();
+    const sel = this._osmSel;
 
-    const updateBulkBtn = () => {
+    const updateBtn = () => {
       const btn = container.querySelector("#btn-bulk-import");
       if (!btn) return;
-      btn.disabled = selectedIds.size === 0;
-      btn.innerHTML = `
-        <svg viewBox="0 0 24 24" style="width:14px;height:14px">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        Ausgewählte importieren (${selectedIds.size})`;
+      btn.disabled = sel.size === 0;
+      btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Importieren (${sel.size})`;
     };
 
-    const syncSelectAll = (tbody) => {
-      const allChk     = container.querySelector("#osm-select-all");
+    const syncAllChk = () => {
+      const allChk = container.querySelector("#osm-chk-all");
       if (!allChk) return;
-      const chks       = [...tbody.querySelectorAll(".osm-row-check")];
-      const allChecked = chks.length > 0 && chks.every(c => c.checked);
-      const someChecked = chks.some(c => c.checked);
-      allChk.checked       = allChecked;
-      allChk.indeterminate = !allChecked && someChecked;
+      const chks = [...container.querySelectorAll(".osm-row-chk")];
+      const checked = chks.filter(c => c.checked).length;
+      allChk.checked = chks.length > 0 && checked === chks.length;
+      allChk.indeterminate = checked > 0 && checked < chks.length;
     };
 
     const renderRows = (filter = "") => {
-      const tbody   = container.querySelector("#osm-tbody");
+      const tbody  = container.querySelector("#osm-tbody");
       const countEl = container.querySelector("#osm-count");
-      const filtered = filter
+      const lf = filter.toLowerCase();
+      const filtered = lf
         ? stations.filter(s =>
-            s.name.toLowerCase().includes(filter) ||
-            s.operator.toLowerCase().includes(filter))
+            (s.name  || "").toLowerCase().includes(lf) ||
+            (s.operator || "").toLowerCase().includes(lf) ||
+            (s.plz   || "").toLowerCase().includes(lf))
         : stations;
 
-      if (countEl) countEl.textContent = `${filtered.length} / ${stations.length} Stationen`;
+      if (countEl) countEl.textContent = `${filtered.length} / ${stations.length}`;
 
-      tbody.innerHTML = filtered.slice(0, 250).map(s => `
-        <tr>
-          <td style="width:36px;padding-right:0">
-            <input type="checkbox" class="osm-row-check" data-osm-id="${s.osmId}"
-                   ${selectedIds.has(s.osmId) ? "checked" : ""}>
-          </td>
-          <td class="mono" style="font-size:var(--text-sm)">${s.name || `<span style="color:var(--color-text-secondary)">–</span>`}</td>
-          <td style="font-size:var(--text-sm)">${s.operator || "–"}</td>
-          <td class="mono" style="font-size:var(--text-sm)">${formatVoltage(s.voltage)}</td>
-          <td class="mono" style="font-size:var(--text-xs)">${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}</td>
-          <td><button class="btn btn-ghost btn-sm osm-pick" data-osm-id="${s.osmId}"
-                      style="white-space:nowrap">Übernehmen</button></td>
-        </tr>`).join("");
+      tbody.innerHTML = filtered.slice(0, 250).map(s => {
+        const checked = sel.has(s.osmId) ? "checked" : "";
+        return `
+          <tr style="${sel.has(s.osmId) ? "background:rgba(37,99,235,0.06)" : ""}">
+            <td style="width:36px"><input type="checkbox" class="osm-row-chk" data-id="${s.osmId}" ${checked}></td>
+            <td style="font-size:var(--text-sm)">${s.name || '<em style="opacity:.5">–</em>'}</td>
+            <td class="mono" style="font-size:var(--text-sm)">${s.plz || "–"}</td>
+            <td style="font-size:var(--text-sm)">${s.operator || "–"}</td>
+            <td class="mono" style="font-size:var(--text-xs)">${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</td>
+            <td><button class="btn btn-ghost btn-sm osm-pick" data-id="${s.osmId}" style="white-space:nowrap">Einzeln</button></td>
+          </tr>`;
+      }).join("");
 
-      tbody.querySelectorAll(".osm-row-check").forEach(chk => {
+      tbody.querySelectorAll(".osm-row-chk").forEach(chk => {
         chk.addEventListener("change", () => {
-          const id = parseInt(chk.dataset.osmId);
-          if (chk.checked) selectedIds.add(id); else selectedIds.delete(id);
-          syncSelectAll(tbody);
-          updateBulkBtn();
+          const id = Number(chk.dataset.id);
+          if (chk.checked) sel.add(id); else sel.delete(id);
+          // highlight row
+          chk.closest("tr").style.background = chk.checked ? "rgba(37,99,235,0.06)" : "";
+          syncAllChk();
+          updateBtn();
         });
       });
 
       tbody.querySelectorAll(".osm-pick").forEach(btn => {
         btn.addEventListener("click", () => {
-          const osmId   = parseInt(btn.dataset.osmId);
-          const station = stations.find(s => s.osmId === osmId);
+          const id = Number(btn.dataset.id);
+          const station = stations.find(s => s.osmId === id);
           if (station) this.fillFromOsmStation(container, station);
         });
       });
 
-      syncSelectAll(tbody);
+      syncAllChk();
     };
 
     renderRows();
 
-    container.querySelector("#osm-filter")?.addEventListener("input", e => {
-      renderRows(e.target.value.toLowerCase().trim());
-    });
+    container.querySelector("#osm-filter")?.addEventListener("input", e =>
+      renderRows(e.target.value.trim()));
 
-    container.querySelector("#osm-select-all")?.addEventListener("change", e => {
-      const tbody = container.querySelector("#osm-tbody");
-      tbody.querySelectorAll(".osm-row-check").forEach(chk => {
+    container.querySelector("#osm-chk-all").addEventListener("change", e => {
+      container.querySelectorAll(".osm-row-chk").forEach(chk => {
         chk.checked = e.target.checked;
-        const id = parseInt(chk.dataset.osmId);
-        if (e.target.checked) selectedIds.add(id); else selectedIds.delete(id);
+        const id = Number(chk.dataset.id);
+        if (e.target.checked) sel.add(id); else sel.delete(id);
+        chk.closest("tr").style.background = e.target.checked ? "rgba(37,99,235,0.06)" : "";
       });
-      updateBulkBtn();
+      updateBtn();
     });
 
-    container.querySelector("#btn-bulk-import")?.addEventListener("click", () => {
-      const toImport = stations.filter(s => selectedIds.has(s.osmId));
+    container.querySelector("#btn-osm-sel-all").addEventListener("click", () => {
+      container.querySelectorAll(".osm-row-chk").forEach(chk => {
+        chk.checked = true;
+        sel.add(Number(chk.dataset.id));
+        chk.closest("tr").style.background = "rgba(37,99,235,0.06)";
+      });
+      syncAllChk();
+      updateBtn();
+    });
+
+    container.querySelector("#btn-osm-desel").addEventListener("click", () => {
+      sel.clear();
+      container.querySelectorAll(".osm-row-chk").forEach(chk => {
+        chk.checked = false;
+        chk.closest("tr").style.background = "";
+      });
+      syncAllChk();
+      updateBtn();
+    });
+
+    container.querySelector("#btn-bulk-import").addEventListener("click", () => {
+      const toImport = stations.filter(s => sel.has(s.osmId));
       if (!toImport.length) return;
       this.bulkImportOsmStations(container, toImport);
     });
@@ -437,16 +456,16 @@ out center tags;`;
     if (btn) { btn.disabled = true; btn.classList.add("btn-loading"); }
 
     const api = getApi();
-    let importCount = 0;
-    const errors = [];
+    let ok = 0;
+    const fail = [];
 
     for (const station of stations) {
       try {
         const newId    = nextTrafoId();
         const voltages = (station.voltage || "").split(";")
           .map(v => parseInt(v)).filter(v => v > 0 && isFinite(v));
-        const vOS = voltages[0]            ? voltages[0] / 1000            : 10;
-        const vUS = voltages.length > 1    ? voltages[voltages.length - 1] / 1000 : 0.4;
+        const vOS = voltages[0]         ? voltages[0] / 1000                    : 10;
+        const vUS = voltages.length > 1 ? voltages[voltages.length - 1] / 1000 : 0.4;
 
         const data = {
           id:                  newId,
@@ -455,6 +474,7 @@ out center tags;`;
           spannungOS:          vOS,
           spannungUS:          vUS,
           baujahr:             null,
+          plz:                 station.plz || "",
           standort:            station.operator ? `Betreiber: ${station.operator}` : "",
           schaltgruppe:        "",
           kurzschlussspannung: 0,
@@ -466,23 +486,29 @@ out center tags;`;
         await api.saveStammdaten(data);
         addTrafoId(newId);
         store.set("stammdaten_" + newId, data);
-        importCount++;
+        ok++;
       } catch (e) {
-        errors.push(station.name || String(station.osmId));
+        fail.push(station.name || String(station.osmId));
       }
     }
 
-    if (btn) { btn.disabled = false; btn.classList.remove("btn-loading"); }
+    // Reset selection UI
+    if (this._osmSel) this._osmSel.clear();
+    container.querySelectorAll(".osm-row-chk").forEach(c => { c.checked = false; c.closest("tr").style.background = ""; });
+    const allChk = container.querySelector("#osm-chk-all");
+    if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.remove("btn-loading");
+      btn.innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Importieren (0)`;
+    }
 
-    if (importCount > 0) {
-      const pl = importCount !== 1 ? "en" : "";
-      showToast("success", "Bulk-Import abgeschlossen",
-        `${importCount} Station${pl} zur Flotte hinzugefügt.`);
+    if (ok > 0) {
+      showToast("success", "Bulk-Import abgeschlossen", `${ok} Station${ok !== 1 ? "en" : ""} importiert.`);
       await this.loadFleet(container);
     }
-    if (errors.length > 0) {
-      showToast("error", "Import-Fehler",
-        `${errors.length} Station${errors.length !== 1 ? "en" : ""} fehlgeschlagen.`);
+    if (fail.length) {
+      showToast("error", "Import-Fehler", `${fail.length} fehlgeschlagen.`);
     }
   },
 
@@ -498,6 +524,7 @@ out center tags;`;
     if (vOS)           setVal(container, "#f-spannungos", vOS);
     if (vUS)           setVal(container, "#f-spannungus", vUS);
 
+    if (station.plz) setVal(container, "#f-plz", station.plz);
     setVal(container, "#f-lat", station.lat.toFixed(6));
     setVal(container, "#f-lon", station.lon.toFixed(6));
     container.querySelector("#fg-koordinaten")?.style.setProperty("display", "");
@@ -523,6 +550,7 @@ function readForm(container, id) {
     spannungUS:          parseFloat(container.querySelector("#f-spannungus")?.value)          || 0,
     baujahr:             parseInt(container.querySelector("#f-baujahr")?.value)               || null,
     standort:            container.querySelector("#f-standort")?.value?.trim(),
+    plz: container.querySelector("#f-plz")?.value?.trim() || "",
     schaltgruppe:        container.querySelector("#f-schaltgruppe")?.value?.trim(),
     kurzschlussspannung: parseFloat(container.querySelector("#f-kurzschlussspannung")?.value) || 0,
     kosFi:               parseFloat(container.querySelector("#f-kosfi")?.value)               || 0.92,
@@ -633,6 +661,11 @@ function buildHTML() {
         <input id="f-standort" class="form-input" type="text" placeholder="Straße, PLZ Ort">
       </div>
 
+      <div class="form-group">
+        <label class="form-label" for="f-plz">Postleitzahl</label>
+        <input id="f-plz" class="form-input mono" type="text" placeholder="80331" maxlength="10">
+      </div>
+
       <div class="form-group" id="fg-koordinaten" style="display:none">
         <label class="form-label">GPS-Koordinaten <span class="form-label-sub">aus OpenStreetMap</span></label>
         <div style="display:flex;gap:var(--space-3)">
@@ -721,8 +754,8 @@ function buildHTML() {
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/>
         <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <div>Daten aus <strong>OpenStreetMap</strong> via Overpass API (Bounding Box München).<br>
-        <strong>Einzeln:</strong> Klick auf <strong>Übernehmen</strong> füllt das Formular, dann <strong>Neue Station anlegen</strong>.<br>
-        <strong>Bulk:</strong> Stationen per Checkbox auswählen · <strong>Ausgewählte importieren</strong> legt alle auf einmal an.</div>
+        <strong>Einzeln:</strong> „Einzeln" übernimmt Station ins Formular → <strong>Neue Station anlegen</strong>.<br>
+        <strong>Bulk:</strong> Checkboxen setzen → <strong>Alle wählen</strong> → <strong>Importieren (N)</strong> legt alle gewählten Stationen an.</div>
     </div>
     <div id="osm-results"></div>
   </div>
