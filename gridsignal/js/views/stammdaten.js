@@ -51,6 +51,20 @@ export default {
     // OSM-Suche
     container.querySelector("#btn-osm-search")
       ?.addEventListener("click", () => this.searchOsm(container));
+
+    // Netzgebiet-Preset → Felder vorbelegen
+    container.querySelector("#f-netzgebiet")?.addEventListener("change", (e) => {
+      const presets = {
+        fernwaerme:  { wpAnteil: 0,  pvLeistung: 0,   heizgrenze: 15 },
+        waermepumpe: { wpAnteil: 40, pvLeistung: 0,   heizgrenze: 15 },
+        pv:          { wpAnteil: 10, pvLeistung: 500, heizgrenze: 15 },
+        gemischt:    { wpAnteil: 25, pvLeistung: 250, heizgrenze: 15 },
+      };
+      const p = presets[e.target.value] || presets.gemischt;
+      setVal(container, "#f-wpanteil",   p.wpAnteil);
+      setVal(container, "#f-pvleistung", p.pvLeistung);
+      setVal(container, "#f-heizgrenze", p.heizgrenze);
+    });
   },
 
   async loadData(container, trafoId) {
@@ -79,7 +93,8 @@ export default {
 
   fillForm(container, data) {
     const fields = ["name","nennleistung","spannungOS","spannungUS",
-                    "baujahr","standort","plz","schaltgruppe","kurzschlussspannung","kosFi"];
+                    "baujahr","standort","plz","schaltgruppe","kurzschlussspannung","kosFi",
+                    "netzgebiet","wpAnteil","pvLeistung","heizgrenze"];
     fields.forEach(f => {
       const el = container.querySelector(`#f-${f.toLowerCase()}`);
       if (el) el.value = data[f] ?? "";
@@ -479,6 +494,10 @@ out center tags;`;
           schaltgruppe:        "",
           kurzschlussspannung: 0,
           kosFi:               0.92,
+          netzgebiet:          "gemischt",
+          wpAnteil:            0,
+          pvLeistung:          0,
+          heizgrenze:          15,
           lat:                 station.lat,
           lon:                 station.lon,
         };
@@ -554,6 +573,10 @@ function readForm(container, id) {
     schaltgruppe:        container.querySelector("#f-schaltgruppe")?.value?.trim(),
     kurzschlussspannung: parseFloat(container.querySelector("#f-kurzschlussspannung")?.value) || 0,
     kosFi:               parseFloat(container.querySelector("#f-kosfi")?.value)               || 0.92,
+    netzgebiet:          container.querySelector("#f-netzgebiet")?.value || "gemischt",
+    wpAnteil:            parseFloat(container.querySelector("#f-wpanteil")?.value)   || 0,
+    pvLeistung:          parseFloat(container.querySelector("#f-pvleistung")?.value) || 0,
+    heizgrenze:          parseFloat(container.querySelector("#f-heizgrenze")?.value) || 15,
     lat:                 parseFloat(container.querySelector("#f-lat")?.value)                 || null,
     lon:                 parseFloat(container.querySelector("#f-lon")?.value)                 || null,
   };
@@ -664,6 +687,39 @@ function buildHTML() {
       <div class="form-group">
         <label class="form-label" for="f-plz">Postleitzahl</label>
         <input id="f-plz" class="form-input mono" type="text" placeholder="80331" maxlength="10">
+      </div>
+
+      <div style="margin:var(--space-4) 0 var(--space-2);padding-top:var(--space-3);border-top:1px solid var(--color-border)">
+        <div class="form-label" style="font-weight:var(--weight-semibold);color:var(--color-text)">Netzgebiet-Charakteristik <span class="form-label-sub">für wetterabhängige Lastprognose</span></div>
+        <div class="form-hint" style="margin-bottom:var(--space-3)">Bestimmt, wie Temperatur (Wärmepumpen) und Solarstrahlung (PV) in die Prognose einfließen.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="f-netzgebiet">Gebietstyp</label>
+        <select id="f-netzgebiet" class="form-select">
+          <option value="fernwaerme">Metropol / Fernwärme (temperatur-entkoppelt)</option>
+          <option value="waermepumpe">Ländlich / Wärmepumpen (temperaturabhängig)</option>
+          <option value="pv">PV-stark, z.B. Moosburg (strahlungsabhängig)</option>
+          <option value="gemischt" selected>Gemischt (WP + PV)</option>
+        </select>
+      </div>
+
+      <div class="form-grid-3">
+        <div class="form-group">
+          <label class="form-label" for="f-wpanteil">Wärmepumpen-Anteil <span class="form-label-sub">%</span></label>
+          <input id="f-wpanteil" class="form-input mono" type="number" min="0" max="100" step="1" placeholder="25">
+          <div class="form-hint">Anteil der Last mit temperaturabhängiger Heizlast</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="f-pvleistung">PV-Leistung <span class="form-label-sub">kWp</span></label>
+          <input id="f-pvleistung" class="form-input mono" type="number" min="0" step="10" placeholder="0">
+          <div class="form-hint">Installierte PV-Erzeugungsleistung am Trafo</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="f-heizgrenze">Heizgrenze <span class="form-label-sub">°C</span></label>
+          <input id="f-heizgrenze" class="form-input mono" type="number" min="5" max="25" step="0.5" placeholder="15" value="15">
+          <div class="form-hint">Außentemp., unterhalb derer geheizt wird</div>
+        </div>
       </div>
 
       <div class="form-group" id="fg-koordinaten" style="display:none">
