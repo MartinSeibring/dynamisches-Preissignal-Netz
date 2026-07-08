@@ -3,6 +3,7 @@ import { store } from "../store.js";
 import { chartManager } from "../charts.js";
 import { forecast } from "../forecast.js";
 import { showToast } from "../toast.js";
+import { fetchWeatherForecast, applyWeatherCorrection, weatherSummary } from "../weather.js";
 
 const METHODS = [
   { value: "ma",         label: "Moving Average (MA)",            params: ["window","horizont"] },
@@ -150,11 +151,48 @@ export default {
         });
       }
 
+      // ── Wetterkorrektur (Stufe 1) ─────────────────────────────────────────
+      const weatherOn = container.querySelector("#fc-weather-toggle")?.checked;
+      if (weatherOn && result.forecast?.length && result._fcTs?.length) {
+        await this.applyWeather(container, result, trafoId, api);
+      }
+
       this.renderResult(container, result, params);
     } catch (e) {
       showToast("error", "Prognose-Fehler", e.message);
     } finally {
       if (btn) { btn.disabled = false; btn.classList.remove("btn-loading"); }
+    }
+  },
+
+  async applyWeather(container, result, trafoId, api) {
+    try {
+      const trafos = await api.getStammdaten();
+      const trafo  = trafos.find(t => t.id === trafoId) || {};
+      const lat = trafo.lat ?? 48.1351;   // Fallback: München-Zentrum
+      const lon = trafo.lon ?? 11.582;
+      const cfg = {
+        lat, lon,
+        wpAnteil:   trafo.wpAnteil   ?? 0,
+        pvLeistung: trafo.pvLeistung ?? 0,
+        heizgrenze: trafo.heizgrenze ?? 15,
+        netzgebiet: trafo.netzgebiet ?? "gemischt",
+      };
+      const days    = Math.min(16, Math.ceil(result._fcTs.length / 96) + 1);
+      const weather = await fetchWeatherForecast(lat, lon, days);
+      const corr    = applyWeatherCorrection(result.forecast, result._fcTs, weather, cfg);
+
+      result._corrected = corr.corrected;
+      result._deltaWp   = corr.deltaWp;
+      result._deltaPv   = corr.deltaPv;
+      result._weather   = weatherSummary(weather, result._fcTs);
+      result._weatherCfg = cfg;
+
+      if (!trafo.lat || !trafo.lon) {
+        showToast("info", "Wetterkorrektur", "Keine GPS-Koordinaten hinterlegt – München-Zentrum als Näherung verwendet.");
+      }
+    } catch (e) {
+      showToast("warning", "Wetterdaten", "Open-Meteo nicht erreichbar – zeige unkorrigierte Prognose.");
     }
   },
 
@@ -175,12 +213,60 @@ export default {
     setTextById(container, "fc-kpi-avgval",  avgFc + " kVA");
     setTextById(container, "fc-kpi-rmse",    rmse + " kVA");
 
+    // Wetterkorrektur-Anzeige
+    this.renderWeather(container, result);
+
     // Chart
     const canvas = container.querySelector("#forecast-chart-canvas");
     if (canvas) this.renderChart(canvas, result);
 
     // Tabelle
     this.renderTable(container, result);
+  },
+
+  renderWeather(container, result) {
+    const card = container.querySelector("#fc-weather-card");
+    if (!card) return;
+
+    if (!result._corrected || !result._weather) {
+      card.style.display = "none";
+      return;
+    }
+    card.style.display = "";
+
+    const w   = result._weather;
+    const cfg = result._weatherCfg || {};
+
+    // Spitzenlast Basis vs. wetterkorrigiert
+    const basePeak = Math.max(...result.forecast);
+    const corrPeak = Math.max(...result._corrected);
+    const peakDelta = corrPeak - basePeak;
+
+    // Größte Einzelbeiträge
+    const maxWp = Math.max(0, ...result._deltaWp);
+    const minPv = Math.min(0, ...result._deltaPv); // negativster PV-Beitrag
+
+    const GEBIET_LABEL = {
+      fernwaerme: "Metropol / Fernwärme",
+      waermepumpe: "Ländlich / Wärmepumpen",
+      pv: "PV-stark",
+      gemischt: "Gemischt (WP + PV)",
+    };
+
+    setTextById(container, "fc-w-temp",  `${w.tMin.toFixed(1)} … ${w.tMax.toFixed(1)} °C`);
+    setTextById(container, "fc-w-ghi",   `${w.ghiMax.toFixed(0)} W/m² max`);
+    setTextById(container, "fc-w-cloud", `${w.cloudAvg.toFixed(0)} % Ø`);
+    setTextById(container, "fc-w-gebiet", GEBIET_LABEL[cfg.netzgebiet] || "–");
+
+    const sign = peakDelta >= 0 ? "+" : "";
+    setTextById(container, "fc-w-peak",
+      `${basePeak.toFixed(0)} → ${corrPeak.toFixed(0)} kVA (${sign}${peakDelta.toFixed(0)})`);
+
+    const parts = [];
+    if (cfg.wpAnteil > 0)   parts.push(`WP-Anteil ${cfg.wpAnteil}% · max. Mehrlast +${maxWp.toFixed(0)} kVA`);
+    if (cfg.pvLeistung > 0) parts.push(`PV ${cfg.pvLeistung} kWp · max. Entlastung ${minPv.toFixed(0)} kVA`);
+    if (!parts.length) parts.push("Keine wetterabhängigen Anteile konfiguriert (Fernwärmegebiet).");
+    setTextById(container, "fc-w-detail", parts.join(" · "));
   },
 
   renderChart(canvas, result) {
@@ -215,7 +301,7 @@ export default {
             fill: true,
           },
           {
-            label: "Prognose",
+            label: result._corrected ? "Prognose (Basis)" : "Prognose",
             data: [...Array(nHist - 1).fill(null), histSlice[nHist - 1], ...fcVals],
             borderColor: "#ea580c",
             backgroundColor: "rgba(234,88,12,0.08)",
@@ -224,6 +310,15 @@ export default {
             pointRadius: 0,
             fill: false,
           },
+          ...(result._corrected ? [{
+            label: "Prognose (wetterkorrigiert)",
+            data: [...Array(nHist - 1).fill(null), histSlice[nHist - 1], ...result._corrected],
+            borderColor: "#16a34a",
+            backgroundColor: "rgba(22,163,74,0.08)",
+            borderWidth: 2.5,
+            pointRadius: 0,
+            fill: false,
+          }] : []),
           {
             label: "Konfidenzband oben",
             data: [...Array(nHist).fill(null), ...upper],
@@ -373,11 +468,22 @@ function buildHTML() {
       </select>
     </div>
   </div>
-  <div style="display:flex;gap:var(--space-3);margin-top:var(--space-2)">
+  <div style="display:flex;align-items:center;gap:var(--space-4);margin-top:var(--space-2);flex-wrap:wrap">
     <button class="btn btn-primary" id="btn-run-forecast">
       <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Prognose berechnen
     </button>
+    <label style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer;font-size:var(--text-sm)">
+      <input type="checkbox" id="fc-weather-toggle" checked style="width:16px;height:16px;cursor:pointer">
+      <span style="display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>
+        Wetterkorrektur (Open-Meteo)
+      </span>
+    </label>
+  </div>
+  <div class="form-hint" style="margin-top:var(--space-2)">
+    Berücksichtigt Temperatur (Wärmepumpen-Heizlast) und Solarstrahlung (PV-Einspeisung) auf Basis der
+    Netzgebiet-Charakteristik der Station. Konfiguration unter <strong>Stammdaten → Netzgebiet-Charakteristik</strong>.
   </div>
 </div>
 
@@ -398,6 +504,43 @@ function buildHTML() {
     <div class="kpi-tile zone-blue">
       <div class="kpi-label">RMSE (Güte)</div>
       <div class="kpi-value mono" id="fc-kpi-rmse">–</div>
+    </div>
+  </div>
+
+  <!-- Wetterkorrektur-Infokarte -->
+  <div class="card" id="fc-weather-card" style="display:none;margin-bottom:var(--space-4);border-left:3px solid #16a34a">
+    <div class="card-header">
+      <div>
+        <div class="card-title" style="display:flex;align-items:center;gap:8px">
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;color:#16a34a"><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>
+          Wetterkorrektur aktiv
+        </div>
+        <div class="card-subtitle" id="fc-w-detail">–</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="kpi-grid">
+        <div class="kpi-tile zone-blue">
+          <div class="kpi-label">Gebietstyp</div>
+          <div style="font-size:var(--text-sm);font-weight:var(--weight-semibold);margin-top:var(--space-1)" id="fc-w-gebiet">–</div>
+        </div>
+        <div class="kpi-tile zone-blue">
+          <div class="kpi-label">Temperatur (Prognosezeitraum)</div>
+          <div class="kpi-value mono" style="font-size:var(--text-lg)" id="fc-w-temp">–</div>
+        </div>
+        <div class="kpi-tile zone-blue">
+          <div class="kpi-label">Solarstrahlung</div>
+          <div class="kpi-value mono" style="font-size:var(--text-lg)" id="fc-w-ghi">–</div>
+        </div>
+        <div class="kpi-tile zone-green">
+          <div class="kpi-label">Spitzenlast Basis → korrigiert</div>
+          <div class="kpi-value mono" style="font-size:var(--text-lg)" id="fc-w-peak">–</div>
+        </div>
+      </div>
+      <div class="form-hint" style="margin-top:var(--space-2)">
+        Bewölkung Ø <span id="fc-w-cloud">–</span> · Modell: Holt-Winters-Basisprognose + physikalische
+        Wetterkorrektur (First-Order, transparent parametriert je Station).
+      </div>
     </div>
   </div>
 
