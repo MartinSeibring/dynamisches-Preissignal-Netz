@@ -71,13 +71,22 @@ export const store = new Store();
 /**
  * Generiert einen realistischen 30-Tage-Lastgang für einen 630 kVA Trafo.
  * 15-Minuten-Auflösung → 30 × 96 = 2880 Datenpunkte.
+ *
+ * @param pvConfig { pvLeistung (kWp), netzgebiet } – bei PV-Stationen wird ein
+ *   Einspeise-Term ergänzt, sodass die Netto-Wirkleistung (pSigned) mittags
+ *   negativ wird (Rückspeisung). |S| bleibt konsistent der Betrag der Netto-Last.
  */
-export function generateDemoData(trafoId = "trafo-1", nennleistung = 630, days = 30) {
+export function generateDemoData(trafoId = "trafo-1", nennleistung = 630, days = 30, pvConfig = {}) {
   const entries = [];
   const now = new Date();
   const start = new Date(now);
   start.setDate(start.getDate() - days);
   start.setHours(0, 0, 0, 0);
+
+  const pvLeistung = pvConfig.pvLeistung ?? 0;
+  const netzgebiet = pvConfig.netzgebiet ?? "";
+  const hasPv = pvLeistung > 0 || netzgebiet === "pv" || netzgebiet === "gemischt";
+  const pvPeak = (pvLeistung > 0 ? pvLeistung : (hasPv ? nennleistung : 0)) * 0.8; // PR ≈ 0.8
 
   for (let d = 0; d < days; d++) {
     const date = new Date(start);
@@ -91,8 +100,18 @@ export function generateDemoData(trafoId = "trafo-1", nennleistung = 630, days =
       const noise = 1 + (Math.random() - 0.5) * 0.15;
       const seasonal = seasonalFactor(date);
 
-      const s = Math.max(20, baseLoad * nennleistung * noise * seasonal);
-      const pf = 0.88 + Math.random() * 0.08; // cos φ 0.88–0.96
+      const consumption = baseLoad * nennleistung * noise * seasonal; // Bruttolast (Bezug)
+
+      // PV-Einspeisung: Glocke um Sonnenmittag, im Sommer stärker (invers zum
+      // Winter-Heizfaktor), mit Tages-Bewölkungsrauschen.
+      const pvShape = solarShape(h);
+      const summerBoost = 2 - seasonal;              // Sommer (seasonal<1) → >1
+      const cloud = 0.4 + 0.6 * Math.random();       // Tages-Bewölkung 0.4..1.0
+      const pvGen = pvPeak > 0 ? pvPeak * pvShape * summerBoost * cloud : 0;
+
+      const netP = consumption - pvGen;              // signiert: mittags < 0 bei starker PV
+      const s = Math.max(1, Math.abs(netP));         // Magnitude für Auslastung/Preis
+      const pf = 0.88 + Math.random() * 0.08;        // cos φ 0.88–0.96
       const p = s * pf;
       const q = Math.sqrt(Math.max(0, s * s - p * p));
 
@@ -101,9 +120,10 @@ export function generateDemoData(trafoId = "trafo-1", nennleistung = 630, days =
 
       entries.push({
         ts: ts.toISOString(),
-        p:  round2(p),
+        p:  round2(p),      // Betrag (Magnitude) – Kompatibilität mit bestehenden Lesern
         q:  round2(q),
         s:  round2(s),
+        pSigned: round2(netP), // vorzeichenbehaftete Netto-Wirkleistung (negativ = Einspeisung)
       });
     }
   }
@@ -141,6 +161,13 @@ function seasonalFactor(date) {
   // Winter (Dez-Feb): +15%, Sommer (Jun-Aug): -8%
   const factors = [1.12, 1.10, 1.05, 0.98, 0.94, 0.92, 0.90, 0.92, 0.96, 1.00, 1.05, 1.12];
   return factors[month];
+}
+
+/** Normierte PV-Erzeugungskurve (0..1) über die Tagesstunde. Sonnenaufgang ~5 h,
+ *  Untergang ~21 h, Maximum um die Mittagszeit. */
+function solarShape(hour) {
+  if (hour <= 5 || hour >= 21) return 0;
+  return Math.max(0, Math.sin((hour - 5) / 16 * Math.PI)); // Halbwelle 5h→21h
 }
 
 function round2(v) { return Math.round(v * 100) / 100; }

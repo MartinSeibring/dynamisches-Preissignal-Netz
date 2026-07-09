@@ -641,7 +641,9 @@ function buildHTML() {
       </div>
       <div class="form-hint" style="margin-top:var(--space-2)">
         Bewölkung Ø <span id="fc-w-cloud">–</span> · Modell: Holt-Winters-Basisprognose + physikalische
-        Wetterkorrektur (First-Order, transparent parametriert je Station).
+        Wetterkorrektur (First-Order, transparent parametriert je Station).<br>
+        PV-Sensitivität wird auf die vorzeichenbehaftete Netto-Wirkleistung geschätzt
+        (berücksichtigt Rückspeisung); Anwendung auf |S| ist eine First-Order-Näherung.
       </div>
     </div>
   </div>

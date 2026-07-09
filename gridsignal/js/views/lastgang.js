@@ -91,7 +91,10 @@ export default {
       const trafo = trafos.find(t => t.id === trafoId);
       const nenn = trafo?.nennleistung || 630;
 
-      const entries = generateDemoData(trafoId, nenn, 30);
+      const entries = generateDemoData(trafoId, nenn, 30, {
+        pvLeistung: trafo?.pvLeistung ?? 0,
+        netzgebiet: trafo?.netzgebiet ?? "gemischt",
+      });
       await api.saveLastgangLocal(trafoId, entries);
       store.set("lastgang_loaded", true);
       store.set("lastgang_count_" + trafoId, entries.length);
