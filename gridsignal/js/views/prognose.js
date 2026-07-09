@@ -4,6 +4,7 @@ import { chartManager } from "../charts.js";
 import { forecast } from "../forecast.js";
 import { showToast } from "../toast.js";
 import { fetchWeatherForecast, applyWeatherCorrection, weatherSummary } from "../weather.js";
+import { fetchWeatherArchive, calibrateStation, calibrationDateRange } from "../calibration.js";
 
 const METHODS = [
   { value: "ma",         label: "Moving Average (MA)",            params: ["window","horizont"] },
@@ -66,6 +67,9 @@ export default {
 
     container.querySelector("#btn-run-forecast")
       ?.addEventListener("click", () => this.runForecast(container));
+
+    container.querySelector("#btn-calibrate")
+      ?.addEventListener("click", () => this.calibrate(container));
 
     // Dynamische Range-Labels
     ["alpha","beta","gamma"].forEach(p => {
@@ -177,6 +181,7 @@ export default {
         pvLeistung: trafo.pvLeistung ?? 0,
         heizgrenze: trafo.heizgrenze ?? 15,
         netzgebiet: trafo.netzgebiet ?? "gemischt",
+        calib:      trafo.calib || null,   // Stufe 2: gelernte Sensitivitäten
       };
       const days    = Math.min(16, Math.ceil(result._fcTs.length / 96) + 1);
       const weather = await fetchWeatherForecast(lat, lon, days);
@@ -184,7 +189,9 @@ export default {
 
       result._corrected = corr.corrected;
       result._deltaWp   = corr.deltaWp;
+      result._deltaCool = corr.deltaCool;
       result._deltaPv   = corr.deltaPv;
+      result._corrMode  = corr.mode;
       result._weather   = weatherSummary(weather, result._fcTs);
       result._weatherCfg = cfg;
 
@@ -193,6 +200,68 @@ export default {
       }
     } catch (e) {
       showToast("warning", "Wetterdaten", "Open-Meteo nicht erreichbar – zeige unkorrigierte Prognose.");
+    }
+  },
+
+  async calibrate(container) {
+    const btn = container.querySelector("#btn-calibrate");
+    const trafoId = store.get("activeTrafoId", "trafo-1");
+    const api = getApi();
+
+    if (btn) { btn.disabled = true; btn.classList.add("btn-loading"); }
+    try {
+      const trafos = await api.getStammdaten();
+      const trafo  = trafos.find(t => t.id === trafoId);
+      if (!trafo) { showToast("warning", "Keine Station", "Aktive Station nicht gefunden."); return; }
+      if (!trafo.lat || !trafo.lon) {
+        showToast("warning", "Kalibrierung", "Station benötigt GPS-Koordinaten (Stammdaten) für Archivabruf.");
+        return;
+      }
+
+      let lastgang = store.get("lastgang_cache_" + trafoId);
+      if (!lastgang) { lastgang = await api.getLastgang(trafoId); }
+      if (!lastgang?.length) { showToast("warning", "Keine Daten", "Kein Lastgang zum Kalibrieren."); return; }
+
+      const range = calibrationDateRange(lastgang, new Date());
+      if (!range) { showToast("warning", "Zeitraum", "Lastgang liegt außerhalb des Archivzeitraums."); return; }
+
+      showToast("info", "Kalibrierung", `Lade Archiv-Wetter ${range.start} … ${range.end} …`);
+      const archive = await fetchWeatherArchive(trafo.lat, trafo.lon, range.start, range.end);
+
+      // Nur überlappende Messpunkte verwenden
+      const usable = lastgang.filter(e => {
+        const t = new Date(e.ts).getTime();
+        return t >= range.startMs && t <= range.endMs;
+      });
+
+      // Prädiktor-Gating aus Gebiets-Charakteristik (physikalischer Prior)
+      const gebiet = trafo.netzgebiet || "gemischt";
+      const calib = calibrateStation(usable, archive, {
+        tHeiz:   trafo.heizgrenze ?? 15,
+        fitHeat: true,
+        fitCool: gebiet === "fernwaerme" || gebiet === "gemischt",
+        fitPv:   (trafo.pvLeistung ?? 0) > 0 || gebiet === "pv" || gebiet === "gemischt",
+      });
+      if (!calib) {
+        showToast("error", "Kalibrierung fehlgeschlagen", "Zu wenige überlappende Daten oder keine Wettervariation.");
+        return;
+      }
+      calib.calibratedAt = new Date().toISOString();
+
+      // Persistieren in Stammdaten
+      const updated = { ...trafo, calib };
+      await api.saveStammdaten(updated);
+      store.set("stammdaten_" + trafoId, updated);
+
+      showToast("success", "Kalibrierung abgeschlossen",
+        `R² = ${(calib.r2 * 100).toFixed(0)} % · ${calib.n} Messpunkte ausgewertet.`);
+
+      // Prognose mit gelerntem Modell neu rechnen
+      await this.runForecast(container);
+    } catch (e) {
+      showToast("error", "Kalibrierungsfehler", e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove("btn-loading"); }
     }
   },
 
@@ -262,10 +331,32 @@ export default {
     setTextById(container, "fc-w-peak",
       `${basePeak.toFixed(0)} → ${corrPeak.toFixed(0)} kVA (${sign}${peakDelta.toFixed(0)})`);
 
+    // Modus-Anzeige (Stufe 1 Heuristik vs. Stufe 2 kalibriert)
+    const calib = cfg.calib;
+    const modeBadge = container.querySelector("#fc-w-mode");
+    if (modeBadge) {
+      if (result._corrMode === "calibrated" && calib) {
+        modeBadge.textContent = `Kalibriert · R² ${(calib.r2 * 100).toFixed(0)} %`;
+        modeBadge.className = "zone-badge green";
+      } else {
+        modeBadge.textContent = "Heuristik (Stufe 1)";
+        modeBadge.className = "zone-badge yellow";
+      }
+    }
+
     const parts = [];
-    if (cfg.wpAnteil > 0)   parts.push(`WP-Anteil ${cfg.wpAnteil}% · max. Mehrlast +${maxWp.toFixed(0)} kVA`);
-    if (cfg.pvLeistung > 0) parts.push(`PV ${cfg.pvLeistung} kWp · max. Entlastung ${minPv.toFixed(0)} kVA`);
-    if (!parts.length) parts.push("Keine wetterabhängigen Anteile konfiguriert (Fernwärmegebiet).");
+    if (result._corrMode === "calibrated" && calib) {
+      // Datenbasiert gelernte Sensitivitäten
+      const maxCool = Math.max(0, ...(result._deltaCool || [0]));
+      parts.push(`Heizsteigung ${fmtSlope(calib.aHeat)} kVA/°C`);
+      if (Math.abs(calib.aCool) > 0.05) parts.push(`Kühlsteigung ${fmtSlope(calib.aCool)} kVA/°C`);
+      parts.push(`PV-Sensitivität ${fmtSlope(calib.aPv * 100)} kVA/100·W/m²`);
+      parts.push(`gelernt aus ${calib.n} Messpunkten (${calib.tMin}…${calib.tMax} °C)`);
+    } else {
+      if (cfg.wpAnteil > 0)   parts.push(`WP-Anteil ${cfg.wpAnteil}% · max. Mehrlast +${maxWp.toFixed(0)} kVA`);
+      if (cfg.pvLeistung > 0) parts.push(`PV ${cfg.pvLeistung} kWp · max. Entlastung ${minPv.toFixed(0)} kVA`);
+      if (!parts.length) parts.push("Keine wetterabhängigen Anteile konfiguriert (Fernwärmegebiet).");
+    }
     setTextById(container, "fc-w-detail", parts.join(" · "));
   },
 
@@ -376,6 +467,11 @@ export default {
 function setTextById(container, id, text) {
   const el = container.querySelector(`#${id}`);
   if (el) el.textContent = text;
+}
+
+function fmtSlope(v) {
+  const s = v >= 0 ? "+" : "";
+  return `${s}${v.toFixed(2)}`;
 }
 
 function formatSlot(ts) {
@@ -514,9 +610,15 @@ function buildHTML() {
         <div class="card-title" style="display:flex;align-items:center;gap:8px">
           <svg viewBox="0 0 24 24" style="width:18px;height:18px;color:#16a34a"><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>
           Wetterkorrektur aktiv
+          <span id="fc-w-mode" class="zone-badge yellow" style="font-size:var(--text-xs)">–</span>
         </div>
         <div class="card-subtitle" id="fc-w-detail">–</div>
       </div>
+      <button class="btn btn-secondary btn-sm" id="btn-calibrate"
+              title="Wettersensitivitäten aus historischem Lastgang + Open-Meteo-Archiv lernen (Stufe 2)">
+        <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Wettermodell kalibrieren
+      </button>
     </div>
     <div class="card-body">
       <div class="kpi-grid">

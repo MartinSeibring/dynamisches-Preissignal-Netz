@@ -86,7 +86,7 @@ export async function fetchWeatherForecast(lat, lon, days = 7) {
     longitude:    lon.toFixed(4),
     hourly:       "temperature_2m,shortwave_radiation,cloud_cover",
     forecast_days: String(Math.min(16, Math.max(1, days))),
-    timezone:     "Europe/Berlin",
+    timezone:     "UTC", // UTC-Zeitstempel → zeitzonenunabhängige Ausrichtung
   });
 
   const resp = await fetch(`${OPEN_METEO_URL}?${params}`);
@@ -112,16 +112,16 @@ function dayOfYear(date) {
   return Math.floor(diff / 86400000);
 }
 
-/** Sonnenhöhe (Elevation) in Grad für lat/lon zu einem lokalen Zeitpunkt. */
+/** Sonnenhöhe (Elevation) in Grad für lat/lon zu einem Zeitpunkt (UTC-basiert). */
 function solarElevation(lat, lon, date) {
   const rad = Math.PI / 180;
   const N = dayOfYear(date);
   // Deklination der Sonne
   const decl = 23.45 * rad * Math.sin(2 * Math.PI * (284 + N) / 365);
-  // Lokale Sonnenzeit (grobe Näherung ohne Zeitgleichung; für Formzwecke ausreichend)
-  const localHour = date.getHours() + date.getMinutes() / 60;
-  const solarTime = localHour + (lon - 15) / 15; // 15° = Referenzmeridian MEZ
-  const H = 15 * rad * (solarTime - 12);         // Stundenwinkel
+  // Sonnenzeit direkt aus UTC + geografischer Länge (zeitzonen-/DST-unabhängig).
+  const utcHour = date.getUTCHours() + date.getUTCMinutes() / 60;
+  const solarTime = utcHour + lon / 15;  // 15° Länge = 1 h
+  const H = 15 * rad * (solarTime - 12); // Stundenwinkel
   const latR = lat * rad;
   const sinElev = Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(H);
   return Math.asin(Math.max(-1, Math.min(1, sinElev))) / rad;
@@ -144,8 +144,9 @@ function clearSkyGHI(lat, lon, date) {
  * @returns Array<{ts, temp, ghi, cloud}>
  */
 function alignWeatherToSlots(weather, slotTsIso) {
-  // Baue Lookup von Stunden-Timestamp (ms) → Index
-  const hourMs = weather.time.map(t => new Date(t).getTime());
+  // Baue Lookup von Stunden-Timestamp (ms) → Index.
+  // Open-Meteo liefert (timezone=UTC) Strings ohne Suffix → als UTC interpretieren.
+  const hourMs = weather.time.map(t => parseUtcMs(t));
 
   return slotTsIso.map(ts => {
     const target = new Date(ts).getTime();
@@ -178,12 +179,17 @@ function alignWeatherToSlots(weather, slotTsIso) {
  * @param {string[]} slotTsIso     Zeitstempel je Slot (ISO)
  * @param {object}   weather       Ergebnis von fetchWeatherForecast
  * @param {object}   cfg           Stationskonfiguration:
- *                                  { lat, lon, wpAnteil (%), pvLeistung (kWp), heizgrenze (°C) }
+ *                                  { lat, lon, wpAnteil (%), pvLeistung (kWp), heizgrenze (°C),
+ *                                    calib? { aHeat, aCool, aPv, tHeiz, tKuehl } }
+ *                                  Ist `calib` gesetzt (Stufe 2), werden die datenbasiert
+ *                                  gelernten Sensitivitäten verwendet; sonst die Stufe-1-Heuristik.
  * @returns {{
  *   corrected: number[],   // wetterkorrigierte Prognose (kVA)
- *   deltaWp:   number[],   // Wärmepumpen-Beitrag je Slot (kVA)
+ *   deltaWp:   number[],   // Heiz-/Wärmepumpen-Beitrag je Slot (kVA)
+ *   deltaCool: number[],   // Kühllast-Beitrag je Slot (kVA)
  *   deltaPv:   number[],   // PV-Beitrag je Slot (kVA, i.d.R. negativ)
  *   slots:     Array,      // ausgerichtete Wetterwerte je Slot
+ *   mode:      string,     // "calibrated" | "heuristic"
  * }}
  */
 export function applyWeatherCorrection(baseForecast, slotTsIso, weather, cfg) {
@@ -193,8 +199,12 @@ export function applyWeatherCorrection(baseForecast, slotTsIso, weather, cfg) {
   const heiz    = cfg.heizgrenze ?? 15;
   const lat = cfg.lat, lon = cfg.lon;
 
+  const calib = cfg.calib || null;
+  const mode  = calib ? "calibrated" : "heuristic";
+
   const corrected = [];
   const deltaWp = [];
+  const deltaCool = [];
   const deltaPv = [];
 
   for (let i = 0; i < baseForecast.length; i++) {
@@ -202,38 +212,49 @@ export function applyWeatherCorrection(baseForecast, slotTsIso, weather, cfg) {
     const w = slots[i];
     const date = new Date(w.ts);
     const month = date.getMonth();
+    const tNorm = T_NORMAL_MONTH[month];
+    const clearSky = (lat != null && lon != null) ? clearSkyGHI(lat, lon, date) : 0;
 
-    // ── Wärmepumpen-Korrektur (Temperatur) ──────────────────────────────────
-    // Nur im Heizregime (Außentemperatur unter Heizgrenze). Mehrlast proportional
-    // zur Abweichung von der monatlichen Normaltemperatur.
-    let dWp = 0;
-    if (wpShare > 0 && w.temp < heiz) {
-      const deltaT = T_NORMAL_MONTH[month] - w.temp; // >0 = kälter als normal
-      dWp = base * wpShare * WP_SENSITIVITY_PER_K * deltaT;
-    }
+    let dWp = 0, dCool = 0, dPv = 0;
 
-    // ── PV-Korrektur (Strahlung) ────────────────────────────────────────────
-    // Die Basis-Prognose enthält bereits die durchschnittliche PV-Einspeisung
-    // (im Netto-Lastgang gelernt). Korrigiert wird die ABWEICHUNG der
-    // prognostizierten Strahlung vom klimatologischen Erwartungswert.
-    let dPv = 0;
-    if (pvKwp > 0 && lat != null && lon != null) {
-      const clearSky = clearSkyGHI(lat, lon, date);
+    if (calib) {
+      // ── Stufe 2: datenbasiert gelernte Sensitivitäten ─────────────────────
+      // Korrektur = Sensitivität × Wetter-Anomalie gegenüber der Klimatologie.
+      const tHeiz  = calib.tHeiz  ?? heiz;
+      const tKuehl = calib.tKuehl ?? 21;
+
+      const hddF = Math.max(0, tHeiz  - w.temp);
+      const hddC = Math.max(0, tHeiz  - tNorm);
+      dWp = (calib.aHeat || 0) * (hddF - hddC);
+
+      const cddF = Math.max(0, w.temp - tKuehl);
+      const cddC = Math.max(0, tNorm  - tKuehl);
+      dCool = (calib.aCool || 0) * (cddF - cddC);
+
       if (clearSky > 5) {
-        const ghiExpected = clearSky * CLEARNESS_MONTH[month]; // klimatolog. Erwartung
-        const ghiDelta = w.ghi - ghiExpected;                  // >0 = sonniger als normal
-        // Mehr PV als normal → geringere Netto-Last (negativer Beitrag)
-        const dPvKw = -pvKwp * PV_PERFORMANCE_RATIO * (ghiDelta / GHI_STC);
-        dPv = dPvKw; // kW ≈ kVA-Größenordnung für die Korrektur
+        const ghiC = clearSky * CLEARNESS_MONTH[month];
+        dPv = (calib.aPv || 0) * (w.ghi - ghiC); // aPv i.d.R. negativ
+      }
+    } else {
+      // ── Stufe 1: physikalische Heuristik mit festen Faktoren ──────────────
+      if (wpShare > 0 && w.temp < heiz) {
+        const deltaT = tNorm - w.temp;                // >0 = kälter als normal
+        dWp = base * wpShare * WP_SENSITIVITY_PER_K * deltaT;
+      }
+      if (pvKwp > 0 && clearSky > 5) {
+        const ghiExpected = clearSky * CLEARNESS_MONTH[month];
+        const ghiDelta = w.ghi - ghiExpected;
+        dPv = -pvKwp * PV_PERFORMANCE_RATIO * (ghiDelta / GHI_STC);
       }
     }
 
     deltaWp.push(round1(dWp));
+    deltaCool.push(round1(dCool));
     deltaPv.push(round1(dPv));
-    corrected.push(Math.max(0, round1(base + dWp + dPv)));
+    corrected.push(Math.max(0, round1(base + dWp + dCool + dPv)));
   }
 
-  return { corrected, deltaWp, deltaPv, slots };
+  return { corrected, deltaWp, deltaCool, deltaPv, slots, mode };
 }
 
 /** Kompakte Wetter-Kennzahlen für die UI-Anzeige. */
@@ -252,3 +273,9 @@ export function weatherSummary(weather, slotTsIso) {
 }
 
 function round1(v) { return Math.round(v * 10) / 10; }
+
+/** Parst einen Zeitstempel als UTC-Millisekunden. Strings ohne Zonensuffix
+ *  (Open-Meteo, timezone=UTC) werden explizit als UTC interpretiert. */
+export function parseUtcMs(t) {
+  return new Date(/[Zz]|[+-]\d\d:?\d\d$/.test(t) ? t : t + "Z").getTime();
+}
