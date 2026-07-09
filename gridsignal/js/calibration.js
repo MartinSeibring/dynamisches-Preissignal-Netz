@@ -26,11 +26,16 @@
  *
  * Datenquelle Historie: Open-Meteo Archive API (ERA5-Reanalyse), CORS-fähig.
  *
- * GRENZE (dokumentiert): Kehrt die Netto-Last bei sehr hoher PV-Einspeisung um
- * (Rückspeisung ins MS-Netz), so ist die gemessene Scheinleistung |S| V-förmig
- * in der Strahlung (Betrag, kein Vorzeichen). Die lineare Regression unterschätzt
- * dann die PV-Sensitivität. Das R² signalisiert diese Güteeinbuße. Eine saubere
- * Behandlung (vorzeichenbehaftete Wirkleistung P statt |S|) wäre Stufe 3.
+ * STUFE 3 (umgesetzt): Das Regressionsziel ist die vorzeichenbehaftete Netto-
+ * Wirkleistung `pSigned` (negativ = Rückspeisung), nicht mehr die Scheinleistung
+ * |S|. Damit bleibt das Ziel bei PV-Einspeisung monoton in der Strahlung und die
+ * PV-Sensitivität aPv wird nicht mehr durch den |S|-Nulldurchgang (V-Form) zu
+ * Null verzerrt. Fallback für Bestandsdaten ohne Vorzeichen: pSigned = |S|.
+ *
+ * Restnäherung: aPv schätzt die Sensitivität der WIRKleistung P; die Korrektur
+ * (weather.js) wird additiv auf |S| angewandt. Bei nennenswertem Q gilt
+ * d|S|/dP = cosφ ≠ 1, die angewandte PV-Entlastung ist also eine First-Order-
+ * Näherung (leicht überzeichnet nahe der Rückspeisung). Das R² zeigt die Güte.
  */
 
 import { parseUtcMs } from "./weather.js";
@@ -104,7 +109,15 @@ function alignArchiveToLastgang(weather, lastgang) {
       const a = arr[i] ?? 0, b = arr[Math.min(i + 1, arr.length - 1)] ?? a;
       return a + (b - a) * Math.max(0, Math.min(1, frac));
     };
-    return { ts: e.ts, s: e.s ?? e.p ?? 0, temp: lerp(weather.temp), ghi: lerp(weather.ghi) };
+    return {
+      ts: e.ts,
+      s: e.s ?? e.p ?? 0,
+      // Regressionsziel: vorzeichenbehaftete Netto-Wirkleistung. Fallback = |S|
+      // (Bestandsdaten ohne Vorzeichen → altes Verhalten, Bezug angenommen).
+      pSigned: e.pSigned ?? e.s ?? e.p ?? 0,
+      temp: lerp(weather.temp),
+      ghi: lerp(weather.ghi),
+    };
   });
 }
 
@@ -146,6 +159,7 @@ export function calibrateStation(lastgang, weather, opts = {}) {
     return {
       bucket: isWknd * 96 + qod,
       s:   a.s,
+      ps:  a.pSigned,   // vorzeichenbehaftete Netto-Wirkleistung (Regressionsziel)
       hdd: Math.max(0, tHeiz - a.temp),
       cdd: Math.max(0, a.temp - tKuehl),
       ghi: a.ghi,
@@ -153,15 +167,17 @@ export function calibrateStation(lastgang, weather, opts = {}) {
     };
   });
 
-  // Slot-Mittelwerte (Baseline je Bucket) für Last + alle Prädiktoren
+  // Slot-Mittelwerte (Baseline je Bucket) für Zielgröße + alle Prädiktoren.
+  // Ziel-Baseline läuft auf pSigned (signiert), damit die Anomalie bei
+  // Rückspeisung monoton in der Strahlung bleibt (kein |S|-V-Bias).
   const acc = {};
   for (const r of rows) {
-    const b = acc[r.bucket] ||= { n: 0, s: 0, hdd: 0, cdd: 0, ghi: 0 };
-    b.n++; b.s += r.s; b.hdd += r.hdd; b.cdd += r.cdd; b.ghi += r.ghi;
+    const b = acc[r.bucket] ||= { n: 0, ps: 0, hdd: 0, cdd: 0, ghi: 0 };
+    b.n++; b.ps += r.ps; b.hdd += r.hdd; b.cdd += r.cdd; b.ghi += r.ghi;
   }
   for (const k in acc) {
     const b = acc[k];
-    b.s /= b.n; b.hdd /= b.n; b.cdd /= b.n; b.ghi /= b.n;
+    b.ps /= b.n; b.hdd /= b.n; b.cdd /= b.n; b.ghi /= b.n;
   }
 
   // Nur aktive Prädiktoren in die Designmatrix (Anomalien gegen Slot-Mittel)
@@ -173,7 +189,7 @@ export function calibrateStation(lastgang, weather, opts = {}) {
   const X = [], y = [];
   for (const r of rows) {
     const b = acc[r.bucket];
-    y.push(r.s - b.s);
+    y.push(r.ps - b.ps);
     X.push(cols.map(c => r[c] - b[c]));
   }
 
