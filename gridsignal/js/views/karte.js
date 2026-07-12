@@ -1,6 +1,6 @@
-import { store } from "../store.js";
-import { router } from "../router.js";
-import { showToast } from "../toast.js";
+import { store } from "../store.js?v=20260712";
+import { router } from "../router.js?v=20260712";
+import { showToast } from "../toast.js?v=20260712";
 
 const OVERPASS_URL  = "https://overpass-api.de/api/interpreter";
 const MUNICH_BBOX   = "48.06,11.36,48.25,11.72";

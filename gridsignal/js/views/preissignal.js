@@ -1,8 +1,8 @@
-import { getApi, localCsvDownload } from "../api.js";
-import { store } from "../store.js";
-import { chartManager } from "../charts.js";
-import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js";
-import { showToast } from "../toast.js";
+import { getApi, localCsvDownload } from "../api.js?v=20260712";
+import { store } from "../store.js?v=20260712";
+import { chartManager } from "../charts.js?v=20260712";
+import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js?v=20260712";
+import { showToast } from "../toast.js?v=20260712";
 
 export default {
   id: "preissignal",
