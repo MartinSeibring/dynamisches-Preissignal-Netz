@@ -11,23 +11,45 @@
   <link rel="stylesheet" href="css/layout.css">
   <link rel="stylesheet" href="css/components.css">
 
+  <!-- Sofort-Fix: Sidebar auf Mobile versteckt BEVOR externes CSS geladen ist -->
+  <style>
+    @media (max-width: 767px) {
+      #app-shell { display: flex; flex-direction: column; height: 100svh; overflow: hidden; }
+      #sidebar   { position: fixed; top: 0; left: 0; width: 240px !important; height: 100%;
+                   transform: translateX(-100%); z-index: 400;
+                   transition: transform 200ms cubic-bezier(.4,0,.2,1); }
+      #sidebar.mobile-open { transform: translateX(0); box-shadow: 0 0 40px rgba(0,0,0,.35); }
+      .main-content { flex: 1; min-width: 0; width: 100%; overflow: hidden;
+                      display: flex; flex-direction: column; }
+      #mobile-menu-btn { display: flex !important; }
+    }
+    @media (min-width: 768px) {
+      #mobile-menu-btn { display: none !important; }
+    }
+  </style>
+
+  <!-- Leaflet (interaktive Karte) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <!-- App Bootstrap -->
   <script type="module">
-    import { BRAND, applyBrand, loadFonts } from "./config/brand.js";
-    import { store, getDemoStammdaten } from "./js/store.js";
-    import { initApi, getApi } from "./js/api.js";
-    import { router, getIconSvg } from "./js/router.js";
-    import { chartManager } from "./js/charts.js";
-    import { showToast } from "./js/toast.js";
+    import { BRAND, applyBrand, loadFonts } from "./config/brand.js?v=20260712";
+    import { store, getDemoStammdaten } from "./js/store.js?v=20260712";
+    import { initApi, getApi } from "./js/api.js?v=20260712";
+    import { router, getIconSvg } from "./js/router.js?v=20260712";
+    import { chartManager } from "./js/charts.js?v=20260712";
+    import { showToast } from "./js/toast.js?v=20260712";
 
-    import stammdatenView  from "./js/views/stammdaten.js";
-    import lastgangView    from "./js/views/lastgang.js";
-    import auslastungView  from "./js/views/auslastung.js";
-    import prognoseView    from "./js/views/prognose.js";
-    import preissignalView from "./js/views/preissignal.js";
+    import stammdatenView  from "./js/views/stammdaten.js?v=20260712";
+    import lastgangView    from "./js/views/lastgang.js?v=20260712";
+    import auslastungView  from "./js/views/auslastung.js?v=20260712";
+    import prognoseView    from "./js/views/prognose.js?v=20260712";
+    import preissignalView from "./js/views/preissignal.js?v=20260712";
+    import karteView       from "./js/views/karte.js?v=20260712";
 
     // ── 1. Brand & Fonts anwenden ──────────────────────────────────────────
     const darkMode = store.get("darkMode", false);
@@ -40,7 +62,7 @@
 
     // ── 3. App-Shell aufbauen ──────────────────────────────────────────────
     function buildShell() {
-      const views = [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView];
+      const views = [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView, karteView];
 
       // Logo
       const logoArea = document.getElementById("logo-area");
@@ -216,7 +238,7 @@
       const container = document.getElementById("view-container");
       router.init(container);
 
-      [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView]
+      [stammdatenView, lastgangView, auslastungView, prognoseView, preissignalView, karteView]
         .forEach(v => router.register(v.id, v));
 
       // Dark mode bei Chart-Initialisierung
@@ -227,13 +249,58 @@
       router.navigate(startView);
     }
 
+    // ── 8. Mobile Sidebar ─────────────────────────────────────────────────
+    function initMobileSidebar() {
+      const sidebar   = document.getElementById("sidebar");
+      const backdrop  = document.getElementById("sidebar-backdrop");
+      const menuBtn   = document.getElementById("mobile-menu-btn");
+
+      function openSidebar() {
+        sidebar.classList.add("mobile-open");
+        backdrop.classList.add("visible");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeSidebar() {
+        sidebar.classList.remove("mobile-open");
+        backdrop.classList.remove("visible");
+        document.body.style.overflow = "";
+      }
+
+      menuBtn?.addEventListener("click", openSidebar);
+      backdrop?.addEventListener("click", closeSidebar);
+
+      // Sidebar-Toggle (X) schließt auch auf Mobile
+      document.getElementById("sidebar-toggle")?.addEventListener("click", () => {
+        if (window.innerWidth <= 767) closeSidebar();
+      });
+
+      // Nav-Link-Klick schließt Sidebar auf Mobile
+      document.getElementById("nav-list")?.addEventListener("click", e => {
+        if (window.innerWidth <= 767) closeSidebar();
+      });
+    }
+
     // ── App starten ────────────────────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", async () => {
-      buildShell();
-      bindEvents();
+      try {
+        buildShell();
+      } catch (e) {
+        console.error("[GridSignal] buildShell Fehler:", e);
+      }
+      try {
+        bindEvents();
+        initMobileSidebar();
+      } catch (e) {
+        console.error("[GridSignal] bindEvents Fehler:", e);
+      }
       await checkBackendStatus();
       await initTrafoSelector();
-      initRouter();
+      try {
+        initRouter();
+      } catch (e) {
+        console.error("[GridSignal] Router Fehler:", e);
+      }
     });
   </script>
 </head>
@@ -279,6 +346,17 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-left">
+        <!-- Hamburger-Button (nur Mobile) -->
+        <button class="header-btn mobile-menu-btn" id="mobile-menu-btn"
+                title="Menü öffnen"
+                style="display:none; flex-shrink:0">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+
         <div class="breadcrumb">
           <span class="breadcrumb-item">GridSignal</span>
           <span class="breadcrumb-sep">/</span>
@@ -315,7 +393,17 @@
   </div>
 </div>
 
+<!-- Sidebar-Backdrop (Mobile) -->
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
 <!-- Toast Container (wird per JS erstellt) -->
+
+<style>
+  /* Hamburger nur auf Mobile sichtbar */
+  @media (max-width: 767px) {
+    .mobile-menu-btn { display: flex !important; }
+  }
+</style>
 
 </body>
 </html>

@@ -286,12 +286,18 @@ export function parseCsv(text) {
     const q = indices.q >= 0 ? parseFloat(cols[indices.q]) : NaN;
     const s = indices.s >= 0 ? parseFloat(cols[indices.s]) : NaN;
 
-    // Berechne fehlende Werte
-    const pFin = isFinite(p) ? p : (isFinite(s) ? s * 0.9 : 0);
-    const qFin = isFinite(q) ? q : (isFinite(s) && isFinite(p) ? Math.sqrt(Math.max(0, s*s - p*p)) : 0);
+    // Berechne fehlende Werte. `p`/`s` bleiben Beträge (Magnitude) für alle
+    // bestehenden Verbraucher; das Vorzeichen (Einspeisung) lebt in `pSigned`.
+    const pMag = isFinite(p) ? Math.abs(p) : NaN;
+    const pFin = isFinite(pMag) ? pMag : (isFinite(s) ? s * 0.9 : 0);
+    const qFin = isFinite(q) ? q : (isFinite(s) && isFinite(pMag) ? Math.sqrt(Math.max(0, s*s - pMag*pMag)) : 0);
     const sFin = isFinite(s) ? s : Math.sqrt(pFin * pFin + qFin * qFin);
 
-    entries.push({ ts, p: round2(pFin), q: round2(qFin), s: round2(sFin) });
+    // Vorzeichenbehaftete Netto-Wirkleistung (negativ = Rückspeisung/Einspeisung).
+    // Liegt nur |S| vor, wird Bezug angenommen (pSigned = s), da keine Richtungsinfo existiert.
+    const pSigned = isFinite(p) ? p : (isFinite(s) ? s : pFin);
+
+    entries.push({ ts, p: round2(pFin), q: round2(qFin), s: round2(sFin), pSigned: round2(pSigned) });
   }
 
   return entries.sort((a, b) => a.ts.localeCompare(b.ts));

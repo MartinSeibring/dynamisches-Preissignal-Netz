@@ -1,8 +1,8 @@
-import { getApi } from "../api.js";
-import { store } from "../store.js";
-import { chartManager } from "../charts.js";
-import { showToast } from "../toast.js";
-import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js";
+import { getApi } from "../api.js?v=20260712";
+import { store } from "../store.js?v=20260712";
+import { chartManager } from "../charts.js?v=20260712";
+import { showToast } from "../toast.js?v=20260712";
+import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js?v=20260712";
 
 export default {
   id: "auslastung",
@@ -11,7 +11,7 @@ export default {
 
   render(container) {
     container.innerHTML = buildHTML();
-    this.#load(container);
+    this.load(container);
   },
 
   destroy() {
@@ -21,7 +21,7 @@ export default {
     chartManager.destroy("daily-max");
   },
 
-  async #load(container) {
+  async load(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     try {
       const api = getApi();
@@ -32,6 +32,8 @@ export default {
       const trafo = trafos.find(t => t.id === trafoId);
       const nenn  = trafo?.nennleistung || 630;
 
+      await this.renderFleetOverview(container, trafos, trafoId, api);
+
       if (!lastgang.length) {
         container.querySelector("#no-data-msg").style.display = "";
         container.querySelector("#auslastung-content").style.display = "none";
@@ -39,18 +41,65 @@ export default {
       }
 
       const signals = priceEngine.generate(lastgang, nenn, DEFAULT_PARAMS);
-      this.#renderKpis(container, signals, nenn);
-      this.#renderLoadChart(container, lastgang, nenn, signals);
-      this.#renderHourlyChart(container, lastgang, nenn);
-      this.#renderZoneChart(container, signals);
-      this.#renderDailyMaxChart(container, signals, nenn);
-      this.#renderStatsTable(container, signals, nenn);
+      this.renderKpis(container, signals, nenn);
+      this.renderLoadChart(container, lastgang, nenn, signals);
+      this.renderHourlyChart(container, lastgang, nenn);
+      this.renderZoneChart(container, signals);
+      this.renderDailyMaxChart(container, signals, nenn);
+      this.renderStatsTable(container, signals, nenn);
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
   },
 
-  #renderKpis(container, signals, nenn) {
+  async renderFleetOverview(container, trafos, activeId, api) {
+    const tbody = container.querySelector("#fleet-overview-tbody");
+    if (!tbody) return;
+
+    const stations = trafos;
+
+    if (stations.length <= 1) {
+      container.querySelector("#fleet-overview-card")?.style.setProperty("display", "none");
+      return;
+    }
+
+    // Check which stations have Lastgang data (parallel)
+    const hasData = await Promise.all(
+      stations.map(s => api.getLastgang(s.id).then(lg => lg.length > 0).catch(() => false))
+    );
+
+    tbody.innerHTML = stations.map((s, i) => {
+      const isActive  = s.id === activeId;
+      const hasLastgang = hasData[i];
+      return `
+        <tr style="${isActive ? "background:var(--color-surface-alt);font-weight:600" : ""}">
+          <td>${isActive ? `<span class="zone-badge green" style="font-size:var(--text-xs)">Analysiert</span>` : ""}</td>
+          <td>${s.name || s.id}</td>
+          <td style="font-size:var(--text-xs)">${s.plz || "–"}</td>
+          <td class="mono right">${s.nennleistung ? s.nennleistung + " kVA" : "–"}</td>
+          <td style="text-align:center">
+            ${hasLastgang
+              ? `<span style="color:var(--color-zone-green)">✓ vorhanden</span>`
+              : `<span style="color:var(--color-text-secondary)">–</span>`}
+          </td>
+          <td>
+            ${!isActive && hasLastgang
+              ? `<button class="btn btn-ghost btn-sm fleet-analyze" data-id="${s.id}"
+                         style="font-size:var(--text-xs)">Analysieren</button>`
+              : ""}
+          </td>
+        </tr>`;
+    }).join("");
+
+    tbody.querySelectorAll(".fleet-analyze").forEach(btn => {
+      btn.addEventListener("click", () => {
+        store.set("activeTrafoId", btn.dataset.id);
+        this.render(container);
+      });
+    });
+  },
+
+  renderKpis(container, signals, nenn) {
     const utils = signals.map(s => s.util).filter(isFinite);
     const powers = signals.map(s => s.s).filter(isFinite);
 
@@ -67,7 +116,7 @@ export default {
     setKpi(container, "kpi-redhours", hoursRed.toFixed(1), "h",   hoursRed > 0 ? "zone-red" : "zone-green");
   },
 
-  #renderLoadChart(container, lastgang, nenn, signals) {
+  renderLoadChart(container, lastgang, nenn, signals) {
     const canvas = container.querySelector("#chart-load");
     if (!canvas) return;
 
@@ -117,7 +166,7 @@ export default {
     });
   },
 
-  #renderHourlyChart(container, lastgang, nenn) {
+  renderHourlyChart(container, lastgang, nenn) {
     const canvas = container.querySelector("#chart-hourly");
     if (!canvas) return;
 
@@ -147,7 +196,7 @@ export default {
     });
   },
 
-  #renderZoneChart(container, signals) {
+  renderZoneChart(container, signals) {
     const canvas = container.querySelector("#chart-zones");
     if (!canvas) return;
     const dist = priceEngine.zoneDistribution(signals);
@@ -182,7 +231,7 @@ export default {
       `${pct(dist.green + dist.yellow)}% OK`);
   },
 
-  #renderDailyMaxChart(container, signals, nenn) {
+  renderDailyMaxChart(container, signals, nenn) {
     const canvas = container.querySelector("#chart-daily-max");
     if (!canvas) return;
 
@@ -211,7 +260,7 @@ export default {
     });
   },
 
-  #renderStatsTable(container, signals, nenn) {
+  renderStatsTable(container, signals, nenn) {
     const tbody = container.querySelector("#stats-tbody");
     if (!tbody) return;
 
@@ -270,6 +319,29 @@ function buildHTML() {
 <div class="view-header">
   <div class="view-title">Auslastung</div>
   <div class="view-subtitle">Trafo-Auslastung analysieren – Spitzenwerte, Zonenzuordnung, Tagesmuster</div>
+</div>
+
+<!-- Stationsflotte (nur sichtbar wenn > 1 Station) -->
+<div class="card" id="fleet-overview-card" style="margin-bottom:var(--space-4)">
+  <div class="card-header">
+    <div class="card-title">Stationsflotte</div>
+    <div class="card-subtitle" style="font-size:var(--text-sm)">Klick auf „Analysieren" wechselt die aktive Station</div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr>
+        <th></th>
+        <th>Station</th>
+        <th>PLZ</th>
+        <th class="right">Nennleistung</th>
+        <th style="text-align:center">Lastgang</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="fleet-overview-tbody">
+        <tr><td colspan="6" style="text-align:center;color:var(--color-text-secondary)">Lade…</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <div id="no-data-msg" class="alert alert-warning" style="display:none">

@@ -1,8 +1,8 @@
-import { getApi, localCsvDownload } from "../api.js";
-import { store } from "../store.js";
-import { chartManager } from "../charts.js";
-import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js";
-import { showToast } from "../toast.js";
+import { getApi, localCsvDownload } from "../api.js?v=20260712";
+import { store } from "../store.js?v=20260712";
+import { chartManager } from "../charts.js?v=20260712";
+import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js?v=20260712";
+import { showToast } from "../toast.js?v=20260712";
 
 export default {
   id: "preissignal",
@@ -12,8 +12,8 @@ export default {
 
   render(container) {
     container.innerHTML = buildHTML();
-    this.#bindEvents(container);
-    this.#load(container);
+    this.bindEvents(container);
+    this.load(container);
   },
 
   destroy() {
@@ -22,29 +22,66 @@ export default {
     this._signals = null;
   },
 
-  #bindEvents(container) {
+  async renderStationSelector(container) {
+    const api    = getApi();
+    const trafos = await api.getStammdaten();
+    if (trafos.length <= 1) return;
+
+    const card = container.querySelector("#ps-station-card");
+    if (card) card.style.display = "";
+
+    const sel    = container.querySelector("#ps-station-sel");
+    const filter = container.querySelector("#ps-station-filter");
+    const active = store.get("activeTrafoId", "trafo-1");
+
+    const populate = (txt = "") => {
+      const lf = txt.toLowerCase();
+      const visible = lf
+        ? trafos.filter(t =>
+            (t.name || "").toLowerCase().includes(lf) ||
+            (t.plz  || "").toLowerCase().includes(lf))
+        : trafos;
+      sel.innerHTML = visible.map(t =>
+        `<option value="${t.id}" ${t.id === active ? "selected" : ""}>${t.name || t.id}${t.plz ? " · " + t.plz : ""}</option>`
+      ).join("");
+    };
+
+    populate();
+    filter?.addEventListener("input", e => populate(e.target.value.trim()));
+
+    sel.onchange = () => {
+      store.set("activeTrafoId", sel.value);
+      this.load(container);
+    };
+  },
+
+  bindEvents(container) {
     container.querySelector("#btn-calc-signal")
-      ?.addEventListener("click", () => this.#calculate(container));
+      ?.addEventListener("click", () => this.calculate(container));
 
     container.querySelector("#btn-export-csv")
-      ?.addEventListener("click", () => this.#exportCsv());
+      ?.addEventListener("click", () => this.exportCsv());
 
     container.querySelector("#btn-export-today")
-      ?.addEventListener("click", () => this.#exportToday());
+      ?.addEventListener("click", () => this.exportToday());
+
+    container.querySelector("#btn-export-fleet")
+      ?.addEventListener("click", () => this.exportAllStations());
 
     // Live-Vorschau bei Parameter-Änderung
     const inputs = container.querySelectorAll(".signal-param");
     inputs.forEach(input => {
-      input.addEventListener("change", () => this.#calculate(container));
+      input.addEventListener("change", () => this.calculate(container));
     });
 
     // Tagesselektor
     container.querySelector("#signal-day-select")
-      ?.addEventListener("change", () => this.#renderDayChart(container));
+      ?.addEventListener("change", () => this.renderDayChart(container));
   },
 
-  async #load(container) {
+  async load(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
+    await this.renderStationSelector(container);
     try {
       const api     = getApi();
       const lastgang = await api.getLastgang(trafoId);
@@ -54,13 +91,13 @@ export default {
         return;
       }
       store.set("lastgang_cache_ps_" + trafoId, lastgang);
-      await this.#calculate(container);
+      await this.calculate(container);
     } catch (e) {
       showToast("error", "Ladefehler", e.message);
     }
   },
 
-  async #calculate(container) {
+  async calculate(container) {
     const trafoId = store.get("activeTrafoId", "trafo-1");
     const api = getApi();
     const trafos = await api.getStammdaten();
@@ -81,14 +118,14 @@ export default {
     container.querySelector("#no-data-ps").style.display = "none";
     container.querySelector("#ps-content").style.display = "";
 
-    this.#renderKpis(container, signals, params);
-    this.#populateDaySelector(container, signals);
-    this.#renderDayChart(container);
-    this.#renderDailySummaryChart(container, signals);
-    this.#renderTable(container, signals);
+    this.renderKpis(container, signals, params);
+    this.populateDaySelector(container, signals);
+    this.renderDayChart(container);
+    this.renderDailySummaryChart(container, signals);
+    this.renderTable(container, signals);
   },
 
-  #renderKpis(container, signals, params) {
+  renderKpis(container, signals, params) {
     const utils  = signals.map(s => s.util);
     const prices = signals.map(s => s.price);
     const dist   = priceEngine.zoneDistribution(signals);
@@ -110,7 +147,7 @@ export default {
     }
   },
 
-  #populateDaySelector(container, signals) {
+  populateDaySelector(container, signals) {
     const sel = container.querySelector("#signal-day-select");
     if (!sel) return;
     const days = [...new Set(signals.map(s => s.ts.substring(0, 10)))];
@@ -121,7 +158,7 @@ export default {
     if (days.length) sel.value = days[days.length - 1];
   },
 
-  #renderDayChart(container) {
+  renderDayChart(container) {
     const sel = container.querySelector("#signal-day-select");
     const day = sel?.value;
     if (!day || !this._signals) return;
@@ -136,7 +173,7 @@ export default {
     });
   },
 
-  #renderDailySummaryChart(container, signals) {
+  renderDailySummaryChart(container, signals) {
     const canvas = container.querySelector("#signal-daily-canvas");
     if (!canvas) return;
 
@@ -171,7 +208,7 @@ export default {
     });
   },
 
-  #renderTable(container, signals) {
+  renderTable(container, signals) {
     const day = container.querySelector("#signal-day-select")?.value;
     const tbody = container.querySelector("#signal-tbody");
     if (!tbody) return;
@@ -190,7 +227,7 @@ export default {
       </tr>`).join("");
   },
 
-  #exportCsv() {
+  exportCsv() {
     if (!this._signals?.length) { showToast("warning", "Keine Daten", "Zuerst Signale berechnen."); return; }
     const csv = priceEngine.toCsvString(this._signals);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -201,7 +238,7 @@ export default {
     showToast("success", "Export", "CSV-Datei wird heruntergeladen.");
   },
 
-  #exportToday() {
+  exportToday() {
     if (!this._signals?.length) { showToast("warning", "Keine Daten", "Zuerst Signale berechnen."); return; }
     const todayStr = new Date().toISOString().substring(0, 10);
     const todaySignals = this._signals.filter(s => s.ts.startsWith(todayStr));
@@ -216,6 +253,48 @@ export default {
     a.href = url; a.download = `preissignal_heute_${todayStr}.csv`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     showToast("success", "Export", "Tagessignal exportiert.");
+  },
+
+  async exportAllStations() {
+    const api    = getApi();
+    const trafos = await api.getStammdaten();
+    if (!trafos.length) { showToast("warning", "Keine Stationen", "Keine Stationen in der Flotte."); return; }
+
+    const params = DEFAULT_PARAMS; // Use default params for fleet export
+    const rows   = [];
+    let processed = 0;
+
+    for (const trafo of trafos) {
+      const lg = await api.getLastgang(trafo.id);
+      if (!lg.length) continue;
+      const signals = priceEngine.generate(lg, trafo.nennleistung || 630, params);
+      for (const s of signals) {
+        rows.push({
+          station:  trafo.name || trafo.id,
+          plz:      trafo.plz  || "",
+          ts:       s.ts,
+          util:     s.util.toFixed(1),
+          zone:     s.zone,
+          price:    s.price.toFixed(2),
+          s_kva:    s.s?.toFixed(0) ?? "",
+        });
+      }
+      processed++;
+    }
+
+    if (!rows.length) { showToast("warning", "Keine Daten", "Keine Lastgangdaten in der Flotte."); return; }
+
+    const header = Object.keys(rows[0]).join(";");
+    const body   = rows.map(r => Object.values(r).join(";")).join("\n");
+    const csv    = `﻿${header}\n${body}`;
+    const blob   = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url    = URL.createObjectURL(blob);
+    const a      = document.createElement("a");
+    a.href = url;
+    a.download = `preissignal_flotte_${new Date().toISOString().substring(0,10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("success", "Flotten-Export", `${processed} Station${processed !== 1 ? "en" : ""} exportiert.`);
   },
 };
 
@@ -268,6 +347,17 @@ function buildHTML() {
   <div class="view-subtitle">Dynamische Netzentgelte auf Basis der Trafo-Auslastung</div>
 </div>
 
+<!-- Station selector (hidden when fleet has only 1 station) -->
+<div class="card" id="ps-station-card" style="display:none;margin-bottom:var(--space-4)">
+  <div class="card-body" style="display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap">
+    <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex-shrink:0"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    <label class="form-label" style="margin:0;white-space:nowrap">Station:</label>
+    <input class="form-input" id="ps-station-filter" placeholder="PLZ oder Name filtern…"
+           style="max-width:180px;height:32px;font-size:var(--text-sm)">
+    <select id="ps-station-sel" class="form-select" style="max-width:340px;height:32px;font-size:var(--text-sm)"></select>
+  </div>
+</div>
+
 <div id="no-data-ps" class="alert alert-warning" style="display:none">
   <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
   Keine Lastgangdaten vorhanden. Bitte zuerst unter <strong>Lastgangdaten</strong> importieren.
@@ -302,7 +392,7 @@ function buildHTML() {
 
   <div style="margin-bottom:var(--space-4)">
     <div class="section-title" style="font-size:var(--text-sm);margin-bottom:var(--space-3)">Auslastungs-Schwellen und Preis-Multiplikatoren</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-4)">
+    <div class="zone-grid-3" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-4)">
       <div style="border-left:3px solid var(--color-zone-yellow);padding-left:var(--space-3)">
         <div class="form-label" style="color:var(--color-zone-yellow)">Zone Gelb</div>
         <div class="form-grid" style="margin-top:var(--space-2)">
@@ -357,6 +447,10 @@ function buildHTML() {
     <button class="btn btn-secondary" id="btn-export-today">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       Heute exportieren
+    </button>
+    <button class="btn btn-ghost" id="btn-export-fleet">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Alle Stationen exportieren
     </button>
   </div>
 </div>

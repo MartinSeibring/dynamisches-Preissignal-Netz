@@ -563,3 +563,187 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+   SIDEBAR-BACKDROP (Mobile Overlay)
+   ============================================================ */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 399;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.sidebar-backdrop.visible { display: block; }
+
+/* ============================================================
+   TABLET (≤ 1024px) — Sidebar automatisch icon-only
+   ============================================================ */
+@media (max-width: 1024px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: var(--sidebar-width-collapsed) 1fr;
+  }
+
+  .sidebar-toggle { display: none; }
+
+  .logo-text, .nav-label, .nav-section-label,
+  .status-label, .sidebar-version, .powered-by {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .trafo-selector-wrap label { display: none; }
+}
+
+/* ============================================================
+   MOBILE (≤ 767px) — Sidebar als Slide-in-Overlay
+   Die primäre Absicherung ist bereits als Inline-CSS in
+   index.html, damit sie VOR dem externen CSS greift.
+   ============================================================ */
+@media (max-width: 767px) {
+
+  /* App-Shell: Flexbox statt Grid, Sidebar raus aus dem Flow */
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    display: flex;
+    flex-direction: column;
+    height: 100svh; /* safe viewport height für iOS */
+    overflow: hidden;
+    grid-template-columns: unset;
+  }
+
+  /* Sidebar: festes Overlay, standardmäßig links versteckt */
+  .sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 240px !important;
+    height: 100% !important;
+    transform: translateX(-100%) !important;
+    transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+    z-index: 400 !important;
+  }
+
+  /* Sidebar eingeblendet */
+  .sidebar.mobile-open {
+    transform: translateX(0) !important;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  /* Alle Labels in der offenen Sidebar sichtbar */
+  .sidebar.mobile-open .logo-text,
+  .sidebar.mobile-open .nav-label,
+  .sidebar.mobile-open .nav-section-label,
+  .sidebar.mobile-open .status-label,
+  .sidebar.mobile-open .sidebar-version,
+  .sidebar.mobile-open .powered-by {
+    opacity: 1 !important;
+    width: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+  }
+
+  .sidebar.mobile-open .sidebar-toggle { display: flex; }
+
+  /* Main Content: nimmt gesamten Platz ein */
+  .main-content {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  .app-header {
+    padding: 0 var(--space-3);
+    height: 54px;
+    flex-shrink: 0;
+  }
+
+  /* Breadcrumb-Prefix ausblenden */
+  .breadcrumb-item:not(.current),
+  .breadcrumb-sep { display: none; }
+
+  /* Trafo-Selector */
+  .trafo-selector-wrap label { display: none; }
+  .trafo-selector { max-width: 120px; font-size: var(--text-xs); }
+
+  /* View-Container: scrollbarer Bereich */
+  .view-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--space-3);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* View-Header */
+  .view-title  { font-size: var(--text-xl); }
+
+  /* KPI: 2 Spalten */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+  .kpi-value { font-size: var(--text-xl) !important; }
+  .kpi-label { font-size: 10px; }
+
+  /* Charts: einspaltig */
+  .chart-grid,
+  .chart-grid.single { grid-template-columns: 1fr !important; }
+
+  /* Chart-Höhen reduzieren */
+  .chart-wrapper { max-height: 220px; }
+
+  /* Forms: einspaltig */
+  .form-grid,
+  .form-grid-3 { grid-template-columns: 1fr !important; }
+
+  /* Zonen-Parameterleiste: gestapelt */
+  .zone-grid-3 { grid-template-columns: 1fr !important; }
+
+  /* Buttons umbrechen */
+  .btn-group-wrap,
+  .param-panel [style*="display:flex"][style*="gap"] { flex-wrap: wrap; }
+
+  /* Karten */
+  .card-body  { padding: var(--space-3) var(--space-4); }
+  .card-header {
+    padding: var(--space-3) var(--space-4);
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .card-footer { padding: var(--space-3) var(--space-4); flex-wrap: wrap; }
+
+  /* Toasts: volle Breite */
+  .toast-container { left: var(--space-3); right: var(--space-3); top: var(--space-3); }
+  .toast { min-width: unset; max-width: unset; width: 100%; }
+
+  /* Tabellen: horizontal scrollbar */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Sub-Tabs scrollbar */
+  .sub-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 1px;
+  }
+
+  /* Drop-Zone kleiner */
+  .drop-zone { padding: var(--space-8) var(--space-4); }
+
+  /* Stammdaten KPI */
+  #stammdaten-kpi { grid-template-columns: repeat(2, 1fr) !important; }
+}
