@@ -1,7 +1,7 @@
-import { getApi } from "../api.js";
+import { getApi } from "../api.js?v=20260712";
 import { store, getDemoStammdaten,
-         getTrafoIds, addTrafoId, removeTrafoId, nextTrafoId } from "../store.js";
-import { showToast } from "../toast.js";
+         getTrafoIds, addTrafoId, removeTrafoId, nextTrafoId } from "../store.js?v=20260712";
+import { showToast } from "../toast.js?v=20260712";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const MUNICH_BBOX  = "48.06,11.36,48.25,11.72";
@@ -544,6 +544,9 @@ out center tags;`;
     if (vUS)           setVal(container, "#f-spannungus", vUS);
 
     if (station.plz) setVal(container, "#f-plz", station.plz);
+    // Standort aus dem Betreiber ableiten bzw. leeren, damit nicht die vorherige
+    // (z.B. Demo-)Adresse stehen bleibt (analog zu bulkImportOsmStations).
+    setVal(container, "#f-standort", station.operator ? `Betreiber: ${station.operator}` : "");
     setVal(container, "#f-lat", station.lat.toFixed(6));
     setVal(container, "#f-lon", station.lon.toFixed(6));
     container.querySelector("#fg-koordinaten")?.style.setProperty("display", "");

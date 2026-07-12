@@ -1,10 +1,10 @@
-import { getApi } from "../api.js";
-import { store } from "../store.js";
-import { chartManager } from "../charts.js";
-import { forecast } from "../forecast.js";
-import { showToast } from "../toast.js";
-import { fetchWeatherForecast, applyWeatherCorrection, weatherSummary } from "../weather.js";
-import { fetchWeatherArchive, calibrateStation, calibrationDateRange } from "../calibration.js";
+import { getApi } from "../api.js?v=20260712";
+import { store } from "../store.js?v=20260712";
+import { chartManager } from "../charts.js?v=20260712";
+import { forecast } from "../forecast.js?v=20260712";
+import { showToast } from "../toast.js?v=20260712";
+import { fetchWeatherForecast, applyWeatherCorrection, weatherSummary } from "../weather.js?v=20260712";
+import { fetchWeatherArchive, calibrateStation, calibrationDateRange } from "../calibration.js?v=20260712";
 
 const METHODS = [
   { value: "ma",         label: "Moving Average (MA)",            params: ["window","horizont"] },
