@@ -111,6 +111,16 @@ export default {
     }
     if (!lastgang?.length) return;
 
+    // Panel für das ökonomische Modell ein-/ausblenden; Asset-Anzahl aus der
+    // Station übernehmen, falls dort hinterlegt (Station ist maßgeblich).
+    const modell = container.querySelector("#ps-modell")?.value;
+    const elastPanel = container.querySelector("#ps-elast-panel");
+    if (elastPanel) elastPanel.style.display = modell === "elastizitaet" ? "" : "none";
+    if (modell === "elastizitaet" && trafo?.anzahlFlexAssets > 0) {
+      const assetInput = container.querySelector("#ps-anzahl-assets");
+      if (assetInput) assetInput.value = trafo.anzahlFlexAssets;
+    }
+
     const params = readParams(container);
     const signals = priceEngine.generate(lastgang, nenn, params);
     this._signals = signals;
@@ -310,7 +320,19 @@ function readParams(container) {
     modell:         container.querySelector("#ps-modell")?.value                    || DEFAULT_PARAMS.modell,
     minCt:          parseFloat(container.querySelector("#ps-min-ct")?.value)        || DEFAULT_PARAMS.minCt,
     maxCt:          parseFloat(container.querySelector("#ps-max-ct")?.value)        || DEFAULT_PARAMS.maxCt,
+    // Ökonomisches Modell (Elastizität)
+    schwelle:         numOr(container.querySelector("#ps-schwelle")?.value,          DEFAULT_PARAMS.schwelle),
+    endkundenpreisCt: numOr(container.querySelector("#ps-endkundenpreis")?.value,    DEFAULT_PARAMS.endkundenpreisCt),
+    elastizitaet:     numOr(container.querySelector("#ps-elastizitaet")?.value,      DEFAULT_PARAMS.elastizitaet),
+    anzahlAssets:     numOr(container.querySelector("#ps-anzahl-assets")?.value,     DEFAULT_PARAMS.anzahlAssets),
+    mittlererBezugKw: numOr(container.querySelector("#ps-mittlerer-bezug")?.value,   DEFAULT_PARAMS.mittlererBezugKw),
   };
+}
+
+// parseFloat, das 0 und negative Werte korrekt zulässt (|| würde 0/−1 verwerfen)
+function numOr(raw, fallback) {
+  const v = parseFloat(raw);
+  return Number.isFinite(v) ? v : fallback;
 }
 
 function setTextById(container, id, text) {
@@ -378,6 +400,7 @@ function buildHTML() {
       <select id="ps-modell" class="form-select signal-param">
         <option value="step">Stufen (step)</option>
         <option value="linear">Linear (interpoliert)</option>
+        <option value="elastizitaet">Elastizität (ökonomisch)</option>
       </select>
     </div>
     <div class="form-group">
@@ -431,6 +454,38 @@ function buildHTML() {
             <input id="ps-mult-rot" type="number" class="form-input mono signal-param" min="1" max="30" step="0.1" value="${d.multRot}">
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ps-elast-panel" style="margin-bottom:var(--space-4);display:none">
+    <div class="section-title" style="font-size:var(--text-sm);margin-bottom:var(--space-2)">Ökonomisches Modell (Elastizität)</div>
+    <div class="form-hint" style="margin-bottom:var(--space-3)">
+      Entgelt = (Auslastung − Schwelle) × Nennleistung × Endkundenpreis ÷ (−Elastizität × Anzahl Assets × mittlerer Bezug).
+      Die Anzahl flexibler Assets wird — falls hinterlegt — aus den Stammdaten der Station übernommen.
+    </div>
+    <div class="form-grid-3" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-4)">
+      <div class="form-group">
+        <label class="form-label">Schwelle <span class="form-label-sub">% Auslastung</span></label>
+        <input id="ps-schwelle" type="number" class="form-input mono signal-param" min="0" max="100" step="1" value="${d.schwelle}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Endkundenpreis <span class="form-label-sub">ct/kWh</span></label>
+        <input id="ps-endkundenpreis" type="number" class="form-input mono signal-param" min="0" step="0.5" value="${d.endkundenpreisCt}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Elastizität</label>
+        <input id="ps-elastizitaet" type="number" class="form-input mono signal-param" max="0" step="0.1" value="${d.elastizitaet}">
+        <div class="form-hint">negativ, aus Analyse: −1</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Anzahl flexibler Assets</label>
+        <input id="ps-anzahl-assets" type="number" class="form-input mono signal-param" min="0" step="1" value="${d.anzahlAssets}">
+        <div class="form-hint">z. B. E-Autos / Wärmepumpen am ONT</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mittlerer Bezug/Asset <span class="form-label-sub">kW</span></label>
+        <input id="ps-mittlerer-bezug" type="number" class="form-input mono signal-param" min="0" step="0.1" value="${d.mittlererBezugKw}">
       </div>
     </div>
   </div>
