@@ -1,7 +1,7 @@
-import { getApi } from "../api.js?v=20260712";
+import { getApi } from "../api.js?v=20261002";
 import { store, getDemoStammdaten,
-         getTrafoIds, addTrafoId, removeTrafoId, nextTrafoId } from "../store.js?v=20260712";
-import { showToast } from "../toast.js?v=20260712";
+         getTrafoIds, addTrafoId, removeTrafoId, nextTrafoId } from "../store.js?v=20261002";
+import { showToast } from "../toast.js?v=20261002";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const MUNICH_BBOX  = "48.06,11.36,48.25,11.72";
