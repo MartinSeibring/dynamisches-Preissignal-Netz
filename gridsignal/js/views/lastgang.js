@@ -1,6 +1,6 @@
-import { getApi, parseCsv } from "../api.js?v=20260712";
-import { store, generateDemoData } from "../store.js?v=20260712";
-import { showToast } from "../toast.js?v=20260712";
+import { getApi, parseCsv } from "../api.js?v=20261002";
+import { store, generateDemoData } from "../store.js?v=20261002";
+import { showToast } from "../toast.js?v=20261002";
 
 export default {
   id: "lastgang",

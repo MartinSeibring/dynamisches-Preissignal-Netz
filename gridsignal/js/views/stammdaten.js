@@ -1,7 +1,7 @@
-import { getApi } from "../api.js?v=20260712";
+import { getApi } from "../api.js?v=20261002";
 import { store, getDemoStammdaten,
-         getTrafoIds, addTrafoId, removeTrafoId, nextTrafoId } from "../store.js?v=20260712";
-import { showToast } from "../toast.js?v=20260712";
+         getTrafoIds, addTrafoId, removeTrafoId, nextTrafoId } from "../store.js?v=20261002";
+import { showToast } from "../toast.js?v=20261002";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const MUNICH_BBOX  = "48.06,11.36,48.25,11.72";
@@ -94,7 +94,7 @@ export default {
   fillForm(container, data) {
     const fields = ["name","nennleistung","spannungOS","spannungUS",
                     "baujahr","standort","plz","schaltgruppe","kurzschlussspannung","kosFi",
-                    "netzgebiet","wpAnteil","pvLeistung","heizgrenze"];
+                    "netzgebiet","wpAnteil","pvLeistung","heizgrenze","anzahlFlexAssets"];
     fields.forEach(f => {
       const el = container.querySelector(`#f-${f.toLowerCase()}`);
       if (el) el.value = data[f] ?? "";
@@ -494,6 +494,7 @@ out center tags;`;
           schaltgruppe:        "",
           kurzschlussspannung: 0,
           kosFi:               0.92,
+          anzahlFlexAssets:    0,
           netzgebiet:          "gemischt",
           wpAnteil:            0,
           pvLeistung:          0,
@@ -580,6 +581,7 @@ function readForm(container, id) {
     wpAnteil:            parseFloat(container.querySelector("#f-wpanteil")?.value)   || 0,
     pvLeistung:          parseFloat(container.querySelector("#f-pvleistung")?.value) || 0,
     heizgrenze:          parseFloat(container.querySelector("#f-heizgrenze")?.value) || 15,
+    anzahlFlexAssets:    parseInt(container.querySelector("#f-anzahlflexassets")?.value) || 0,
     lat:                 parseFloat(container.querySelector("#f-lat")?.value)                 || null,
     lon:                 parseFloat(container.querySelector("#f-lon")?.value)                 || null,
   };
@@ -723,6 +725,17 @@ function buildHTML() {
           <input id="f-heizgrenze" class="form-input mono" type="number" min="5" max="25" step="0.5" placeholder="15" value="15">
           <div class="form-hint">Außentemp., unterhalb derer geheizt wird</div>
         </div>
+      </div>
+
+      <div style="margin:var(--space-4) 0 var(--space-2);padding-top:var(--space-3);border-top:1px solid var(--color-border)">
+        <div class="form-label" style="font-weight:var(--weight-semibold);color:var(--color-text)">Flexibilität <span class="form-label-sub">für das ökonomische Preissignal-Modell</span></div>
+        <div class="form-hint" style="margin-bottom:var(--space-3)">Anzahl steuerbarer Verbraucher am ONT — Grundlage für das elastizitätsbasierte Netzentgelt.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="f-anzahlflexassets">Anzahl flexibler Assets <span class="form-label-sub">z. B. E-Autos / Wärmepumpen</span></label>
+        <input id="f-anzahlflexassets" class="form-input mono" type="number" min="0" step="1" placeholder="30">
+        <div class="form-hint">Wird im Preissignal (Modell „Elastizität") als flexible Last herangezogen</div>
       </div>
 
       <div class="form-group" id="fg-koordinaten" style="display:none">
