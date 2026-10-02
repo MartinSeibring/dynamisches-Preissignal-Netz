@@ -11,9 +11,20 @@ export const DEFAULT_PARAMS = {
   multGelb:       1.5,
   multOrange:     2.5,
   multRot:        4.0,
-  modell:         "step", // "step" | "linear"
+  modell:         "step", // "step" | "linear" | "elastizitaet"
   minCt:          5.0,
   maxCt:          150.0,
+
+  // Parameter für das ökonomische Modell ("elastizitaet"), abgeleitet aus dem
+  // Forschungsprojekt: Netzentgelt_t =
+  //   (Auslastung − Schwelle) × Nennleistung × Endkundenpreis
+  //   ────────────────────────────────────────────────────────
+  //   (−Elastizität) × Anzahl flexibler Assets × mittlerer Bezug
+  schwelle:        50.0,  // Auslastungs-Schwelle in % (Beginn der Bepreisung)
+  endkundenpreisCt: 30.0, // Endkundenpreis in ct/kWh
+  elastizitaet:   -1.0,   // Preiselastizität der flexiblen Last (aus Analyse: −1)
+  anzahlAssets:   30,     // Anzahl flexibler Assets (z. B. E-Autos) am ONT
+  mittlererBezugKw: 0.5,  // mittlerer Bezug eines flexiblen Assets in kW
 };
 
 export class PriceSignalEngine {
@@ -36,19 +47,45 @@ export class PriceSignalEngine {
    * Berechnet den Preis für eine gegebene Auslastung.
    * @param {number} utilPercent
    * @param {object} params - vollständige Parameterliste
+   * @param {number} [nennleistung=0] - Nennleistung des ONT (kVA/kW), nur für
+   *   das ökonomische Modell erforderlich.
    */
-  calculatePrice(utilPercent, params) {
+  calculatePrice(utilPercent, params, nennleistung = 0) {
     const p = { ...DEFAULT_PARAMS, ...params };
     const zone = this.calculateZone(utilPercent, p);
 
     let price;
-    if (p.modell === "linear") {
+    if (p.modell === "elastizitaet") {
+      price = this.#elastizitaetPrice(utilPercent, p, nennleistung);
+    } else if (p.modell === "linear") {
       price = this.#linearPrice(utilPercent, p);
     } else {
       price = this.#stepPrice(zone, p);
     }
 
     return Math.min(p.maxCt, Math.max(p.minCt, price));
+  }
+
+  /**
+   * Ökonomisches Modell aus dem Forschungsprojekt.
+   * Netzentgelt_t = (Auslastung − Schwelle) × Nennleistung × Endkundenpreis
+   *                 ────────────────────────────────────────────────────────
+   *                 (−Elastizität) × Anzahl flexibler Assets × mittlerer Bezug
+   *
+   * Die Auslastungsdifferenz wird als Bruchteil verrechnet (55 % − 50 % → 0,05).
+   * Unterhalb der Schwelle wird der Wert negativ und anschließend durch minCt
+   * gedeckelt (kein Rabatt, sondern Mindestentgelt). Fehlt der flexible Hebel
+   * (keine Assets / kein Bezug / Elastizität 0), fällt das Modell auf das
+   * Basis-Netzentgelt zurück, um Division durch null zu vermeiden.
+   */
+  #elastizitaetPrice(util, p, nennleistung) {
+    const flexLastKw = (p.anzahlAssets || 0) * (p.mittlererBezugKw || 0);
+    const elast = p.elastizitaet || 0;
+    if (flexLastKw <= 0 || elast === 0 || !(nennleistung > 0)) {
+      return p.basisCt;
+    }
+    const ueberschussKw = ((util - p.schwelle) / 100) * nennleistung;
+    return (ueberschussKw * p.endkundenpreisCt) / (-elast * flexLastKw);
   }
 
   #stepPrice(zone, p) {
@@ -93,7 +130,7 @@ export class PriceSignalEngine {
       const s = entry.s || Math.sqrt((entry.p || 0) ** 2 + (entry.q || 0) ** 2);
       const util = nennleistung > 0 ? (s / nennleistung) * 100 : 0;
       const zone = this.calculateZone(util, p);
-      const price = this.calculatePrice(util, p);
+      const price = this.calculatePrice(util, p, nennleistung);
       return {
         ts:    entry.ts,
         util:  round2(util),
