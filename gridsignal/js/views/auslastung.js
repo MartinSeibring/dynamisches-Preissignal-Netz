@@ -1,8 +1,8 @@
-import { getApi } from "../api.js?v=20261002";
-import { store } from "../store.js?v=20261002";
-import { chartManager } from "../charts.js?v=20261002";
-import { showToast } from "../toast.js?v=20261002";
-import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js?v=20261002";
+import { getApi } from "../api.js?v=20261117";
+import { store } from "../store.js?v=20261117";
+import { chartManager } from "../charts.js?v=20261117";
+import { showToast } from "../toast.js?v=20261117";
+import { priceEngine, DEFAULT_PARAMS } from "../priceSignal.js?v=20261117";
 
 export default {
   id: "auslastung",

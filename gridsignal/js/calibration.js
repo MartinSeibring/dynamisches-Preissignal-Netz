@@ -38,7 +38,7 @@
  * Näherung (leicht überzeichnet nahe der Rückspeisung). Das R² zeigt die Güte.
  */
 
-import { parseUtcMs } from "./weather.js?v=20261002";
+import { parseUtcMs } from "./weather.js?v=20261117";
 
 const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 

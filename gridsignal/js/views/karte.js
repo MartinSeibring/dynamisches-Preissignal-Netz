@@ -1,6 +1,7 @@
-import { store } from "../store.js?v=20261002";
-import { router } from "../router.js?v=20261002";
-import { showToast } from "../toast.js?v=20261002";
+import { store } from "../store.js?v=20261117";
+import { router } from "../router.js?v=20261117";
+import { showToast } from "../toast.js?v=20261117";
+import { getApi } from "../api.js?v=20261117";
 
 const OVERPASS_URL  = "https://overpass-api.de/api/interpreter";
 const MUNICH_BBOX   = "48.06,11.36,48.25,11.72";
@@ -12,7 +13,8 @@ export default {
   icon: "map",
 
   _map: null,
-  _markersLayer: null,
+  _markersLayer: null,   // OSM-Treffer (nach Button-Klick)
+  _fleetLayer: null,     // gespeicherte Stammdaten-Stationen (dauerhaft)
   _stations: [],
 
   render(container) {
@@ -27,6 +29,7 @@ export default {
       this._map = null;
     }
     this._markersLayer = null;
+    this._fleetLayer = null;
     this._stations = [];
   },
 
@@ -46,8 +49,57 @@ export default {
       maxZoom: 19,
     }).addTo(this._map);
 
-    this._markersLayer = L.featureGroup().addTo(this._map);
+    this._fleetLayer   = L.featureGroup().addTo(this._map); // gespeicherte Stationen
+    this._markersLayer = L.featureGroup().addTo(this._map); // OSM-Treffer
     this._map.invalidateSize();
+
+    // Gespeicherte Stammdaten-Stationen sofort anzeigen (ohne OSM-Laden).
+    this.renderFleet(container);
+  },
+
+  async renderFleet(container) {
+    if (!this._fleetLayer || !window.L) return;
+    const statusEl = container.querySelector("#map-status");
+    try {
+      const trafos   = await getApi().getStammdaten();
+      const activeId = store.get("activeTrafoId", "trafo-1");
+      const withGps  = (trafos || []).filter(t => t.lat && t.lon);
+
+      this._fleetLayer.clearLayers();
+
+      if (!withGps.length) {
+        if (statusEl) statusEl.textContent =
+          "Keine gespeicherten Stationen mit GPS – über „OSM-Daten laden" importieren.";
+        return;
+      }
+
+      for (const t of withGps) {
+        const isActive = t.id === activeId;
+        const marker = L.circleMarker([t.lat, t.lon], fleetMarkerStyle(isActive));
+        marker.bindPopup(buildFleetPopup(t, isActive), { maxWidth: 240 });
+        marker.on("popupopen", () => {
+          const popupEl = marker.getPopup().getElement();
+          popupEl?.querySelector(".fleet-activate-btn")
+            ?.addEventListener("click", () => {
+              store.set("activeTrafoId", t.id);
+              marker.closePopup();
+              this.renderFleet(container); // Aktiv-Markierung aktualisieren
+              showToast("success", "Station aktiv", `„${t.name || t.id}" ist jetzt die aktive Station.`);
+            }, { once: true });
+        });
+        this._fleetLayer.addLayer(marker);
+      }
+
+      // Karte auf die Flotte zentrieren.
+      try {
+        this._map.fitBounds(this._fleetLayer.getBounds(), { padding: [40, 40], maxZoom: 15 });
+      } catch { /* einzelne Station → Standardzoom bleibt */ }
+
+      if (statusEl) statusEl.textContent =
+        `${withGps.length} gespeicherte Station${withGps.length !== 1 ? "en" : ""} angezeigt`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "Flotte konnte nicht geladen werden";
+    }
   },
 
   bindEvents(container) {
@@ -153,6 +205,37 @@ function markerStyle(adopted) {
   };
 }
 
+// Gespeicherte Flottenstation: grün; aktive Station hervorgehoben.
+function fleetMarkerStyle(isActive) {
+  return {
+    radius:      isActive ? 11 : 9,
+    fillColor:   isActive ? "#16a34a" : "#22c55e",
+    color:       "#14532d",
+    weight:      isActive ? 3 : 2,
+    opacity:     1,
+    fillOpacity: 0.9,
+  };
+}
+
+function buildFleetPopup(t, isActive) {
+  const standort = t.standort || (t.plz ? `PLZ ${t.plz}` : "");
+  return `
+    <div style="font-size:13px;line-height:1.6;min-width:180px">
+      <div style="font-weight:600;margin-bottom:2px">${t.name || t.id}</div>
+      ${t.nennleistung ? `<div style="color:#555">Nennleistung: ${t.nennleistung} kVA</div>` : ""}
+      ${standort ? `<div style="color:#555">${standort}</div>` : ""}
+      <div style="color:#aaa;font-size:10px">${Number(t.lat).toFixed(5)}, ${Number(t.lon).toFixed(5)}</div>
+      ${isActive
+        ? `<div style="color:#16a34a;font-weight:600;margin-top:5px">✓ Aktive Station</div>`
+        : `<button class="fleet-activate-btn"
+             style="margin-top:7px;padding:5px 0;width:100%;background:#16a34a;
+                    color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500">
+             Als aktive Station setzen
+           </button>`
+      }
+    </div>`;
+}
+
 function buildPopup(s, isAdopted) {
   const voltStr = formatVoltage(s.voltage);
   return `
@@ -186,14 +269,14 @@ function buildHTML() {
   return `
 <div class="view-header">
   <div class="view-title">Netzstationskarte</div>
-  <div class="view-subtitle">Trafostationen im Münchner Stadtgebiet aus OpenStreetMap visualisieren</div>
+  <div class="view-subtitle">Gespeicherte Trafostationen der Flotte und OSM-Stationen im Münchner Stadtgebiet</div>
 </div>
 
 <div class="card">
   <div class="card-header">
     <div>
       <div class="card-title">Karte München</div>
-      <div class="card-subtitle" id="map-status">Klick auf „OSM-Daten laden" zum Starten</div>
+      <div class="card-subtitle" id="map-status">Lade gespeicherte Stationen…</div>
     </div>
     <button class="btn btn-secondary btn-sm" id="btn-map-load">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -218,10 +301,11 @@ function buildHTML() {
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <div>
-        <strong style="color:#2563eb">●</strong> Blau = Station verfügbar ·
-        <strong style="color:#16a34a">●</strong> Grün = Aktive Station (in Stammdaten).<br>
-        Klick auf Marker öffnet Popup · „Übernehmen" füllt Stammdaten-Formular automatisch.
-        Quelle: OpenStreetMap (Abdeckung ca. 5–15 % der ~5.000 SWM-Stationen).
+        <strong style="color:#22c55e">●</strong> Grün = gespeicherte Station der Flotte
+        (werden automatisch angezeigt) ·
+        <strong style="color:#2563eb">●</strong> Blau = OSM-Treffer nach „OSM-Daten laden".<br>
+        Klick auf einen grünen Marker → „Als aktive Station setzen". „Übernehmen" bei blauen
+        Markern füllt das Stammdaten-Formular. OSM-Abdeckung ca. 5–15 % der ~5.000 SWM-Stationen.
       </div>
     </div>
   </div>
